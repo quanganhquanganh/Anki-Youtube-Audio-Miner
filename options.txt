@@ -1,0 +1,1 @@
+{'lang': 'japanese', 'expr_fld': 'sentence', 'audio_fld': 'audio'}

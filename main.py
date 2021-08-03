@@ -2,6 +2,7 @@ from __future__ import (absolute_import, division,
 						print_function, unicode_literals)
 
 import os, sys
+from typing import List
 
 from gui import initializeQtResources
 
@@ -38,10 +39,11 @@ initializeQtResources()
 
 home = os.path.dirname(os.path.abspath(__file__))
 seq_path = os.path.join(home, "seq_time.txt")
+opt_path = os.path.join(home, "options.txt")
 
-def get_ffmpeg():
-	op_s = os.name
-	return os.path.normpath(os.path.join(home, "ffmpeg", "ffmpeg.exe")) if op_s == "nt" else os.path.normpath(os.path.join(home, "ffmpeg", "ffmpeg"))
+#def get_ffmpeg():
+#	op_s = os.name
+#	return os.path.normpath(os.path.join(home, "ffmpeg", "ffmpeg.exe")) if op_s == "nt" else os.path.normpath(os.path.join(home, "ffmpeg", "ffmpeg"))
 
 def error_message(text,title="Error has occured"):
 	dialog = QtWidgets.QMessageBox()
@@ -71,33 +73,37 @@ class AudioSequence:
 	def loc(self):
 		return self._loc
 
-class SubCutter:
-	def __init__(self, href = None, vid_format = 'mp4', audio_format = 'mp3', lang = 'ja', sub_format = 'srt', \
-				begin = -1, end = 1000000000):
-		self.href = href
-		self.vid_format = vid_format
-		self.audio_format = audio_format
-		self.lang = lang
-		self.sub_format = sub_format
-		self.begin = begin
-		self.end = end
-		self.general_path = os.path.normpath(os.path.join(home, "downloads", "SC"))
-		self.vid_path = self.general_path + "." + vid_format
-		self.audio_path = self.general_path + "." + audio_format
-		self.vtt_sub_path = self.general_path + "." + lang + ".vtt"
-		self.sub_path = self.general_path + "." + lang + "." + sub_format
-		self.ffmpeg = get_ffmpeg()
-		
-	def _download(self):
-		self._cleanDownloads()
+class Dl_thread(QtCore.QThread):
+	done = QtCore.pyqtSignal(bool)
 
+	def __init__(self, href, lang, general_path, audio_path, vtt_sub_path, audio_format, dl_bar):
+		super().__init__()
+		self.href = href
+		self.lang = lang
+		self.general_path = general_path
+		self.audio_path = audio_path
+		self.vtt_sub_path = vtt_sub_path
+		self.audio_format = audio_format
+		self.dl_bar = dl_bar
+		self.ffmpeg = "ffmpeg"
+	
+	def _download_hook(self, d):
+		if d['status'] == 'finished':
+			self.done.emit(True)
+		if d['status'] == 'downloading':
+			p = d['_percent_str']
+			p = p.replace('%','')
+			self.dl_bar.setValue(float(p))
+
+	def run(self):
 		ydl_opts = {'subtitleslangs': [self.lang], "skip_download": True, "writesubtitles": True, "subtitlesformat": 'vtt',
 				"outtmpl": self.general_path, "quiet":True, "no_warnings":True}
 		
 		opts_no_lang = {'subtitleslangs': [self.lang], "skip_download": True, "writeautomaticsub": True, "writesubtitles": True, "subtitlesformat": 'vtt',
 						"outtmpl": self.general_path, "quiet":True, "no_warnings":True}
-						
+
 		vid_opts = {'format': 'bestaudio/best',
+					'progress_hooks': [self._download_hook],
 					'postprocessors': [{
 					'key': 'FFmpegExtractAudio',
 					'preferredcodec': self.audio_format,
@@ -116,18 +122,111 @@ class SubCutter:
 		if have_sub is False:
 			error_message("Couldn't download the subtitles for some reason. Try again later.")
 			return
-		
+
 		ydl = youtube_dl.YoutubeDL(vid_opts)
 		ydl.download([self.href])
 		return
+
+class Process_thread(QtCore.QThread):
+	percent = QtCore.pyqtSignal(float)
+
+	def __init__(self, sequences: List = None, 
+				begin: float = -1.0, 
+				end: float = 999999, 
+				audio_format = "mp3", 
+				audio_path = None):
+		super().__init__()
+		self.sequences = sequences
+		self.begin = begin
+		self.end = end
+		self.audio_format = audio_format
+		self.audio_path = audio_path
+		self.ffmpeg = "ffmpeg"
+
+	def run(self):
+		str_length = 4
+		
+		output_sub = seq_path
+		
+		out = codecs.open(output_sub.replace("\\", "/"), 'w', 'UTF-8')
+
+		command_format = self.ffmpeg + " -ss {0} -i \"{1}\" -ss 0 -c copy -t {2} -avoid_negative_ts make_zero -c:a libmp3lame \"{3}\""
+		use_shell = True if os.name == "nt" else False
+		random_prefix = "".join(random.choice(string.ascii_letters) for i in range(str_length))
+		
+		total = len(self.sequences)
+		cur = 0
+
+		for s in self.sequences:
+			cur = cur + 1
+			self.percent.emit(round(cur / total * 100, 1))
+			
+			if s.begin() < self.begin:
+				continue
+			filename = "{0}{1}.".format(random_prefix, int(s.begin() * 1000)) + self.audio_format
+			filepath = os.path.join(home, "audio", filename)
+			command = command_format.format(s.begin(), self.audio_path, s.end() - s.begin(), filepath)
+			try:
+				subprocess.check_output(command.replace("\\", "/"), shell=use_shell)
+			except:
+				continue
+			str = "{0}-[{1}-{2}]:{3}".format(filepath, s.begin(), s.end(), s.sentence())
+			out.write(str)
+			if s.end() > self.end:
+				self.percent.emit(100.0)
+				return
+
+class SubCutter:
+	def __init__(self, href = None, 
+				vid_format = 'mp4', 
+				audio_format = 'mp3', 
+				lang = 'ja', 
+				sub_format = 'srt',
+				begin = -1, 
+				end = 999999,
+				dl_bar: QtWidgets.QProgressBar = None,
+				ext_bar: QtWidgets.QProgressBar = None,
+				setup_range = None):
+		
+		self.href = href
+		self.vid_format = vid_format
+		self.audio_format = audio_format
+		self.lang = lang
+		self.sub_format = sub_format
+		self.begin = begin
+		self.end = end
+		self.general_path = os.path.normpath(os.path.join(home, "downloads", "SC"))
+		self.vid_path = self.general_path + "." + vid_format
+		self.audio_path = self.general_path + "." + audio_format
+		self.vtt_sub_path = self.general_path + "." + lang + ".vtt"
+		self.sub_path = self.general_path + "." + lang + "." + sub_format
+		self.dl_bar = dl_bar
+		self.ext_bar = ext_bar
+		self.ffmpeg = "ffmpeg"
+		self.setup_range = setup_range
+
+	def _download(self):
+		self.dl_bar.setValue(0)
+		#app = QtCore.QCoreApplication([])
+		self.thread = Dl_thread(href = self.href, 
+								lang = self.lang, 
+								general_path = self.general_path, 
+								audio_path = self.audio_path, 
+								vtt_sub_path = self.vtt_sub_path, 
+								audio_format = self.audio_format, 
+								dl_bar = self.dl_bar)
+		self.thread.done.connect(self._convert_to_srt)
+		self.thread.start()
+		#app.exec_()
 
 	def _convert_to_srt(self):
 		command = self.ffmpeg + ' ' + '-i' + ' ' + self.vtt_sub_path + ' ' + self.sub_path + ' -loglevel quiet'
 		use_shell = True if os.name == "nt" else False
 		try:
 			output = subprocess.check_output(command.replace("\\", "/"), shell=use_shell)
+			self.setup_range()	
 		except Exception as e:
-			error_message("Error: Couldn't convert subtitle to .srt!")
+			error_message("Error: Couldn't convert .vtt subtitle to .srt!\n{}".format(e))
 			return
 		
 	def _make_list(self):
@@ -174,32 +273,14 @@ class SubCutter:
 		return sequences[1:]
 		
 	def _process(self, sequences):
-		self._cleanAudio()
-		str_length = 4
-		
-		output_sub = seq_path
-		
-		out = codecs.open(output_sub.replace("\\", "/"), 'w', 'UTF-8')
+		self.ext_bar.setValue(0)
+		self.thread = Process_thread(sequences, self.begin, self.end, self.audio_format, self.audio_path)
+		self.thread.percent.connect(self._update_ext_bar)
+		self.thread.start()
+	
+	def _update_ext_bar(self, val):
+		self.ext_bar.setValue(val)
 
-		command_format = "ffmpeg -ss {0} -i \"{1}\" -ss 0 -c copy -t {2} -avoid_negative_ts make_zero -c:a libmp3lame \"{3}\""
-		use_shell = True if os.name == "nt" else False
-		random_prefix = "".join(random.choice(string.ascii_letters) for i in range(str_length))
-		
-		for s in sequences:
-			if s.begin() < self.begin:
-				continue
-			filename = "{0}{1}.".format(random_prefix, int(s.begin() * 1000)) + self.audio_format
-			filepath = os.path.join(home, "audio", filename)
-			command = command_format.format(s.begin(), self.audio_path, s.end() - s.begin(), filepath)
-			try:
-				subprocess.check_output(command.replace("\\", "/"), shell=use_shell)
-			except:
-				continue
-			str = "{0}-[{1}-{2}]:{3}".format(filepath, s.begin(), s.end(), s.sentence())
-			out.write(str)
-			if s.end() > self.end:
-				return
-			
 	def _cleanAudio(self):
 		audio_folder = os.path.join(home, "audio/*")
 		files = glob.glob(audio_folder.replace("\\", "/"))
@@ -214,20 +295,20 @@ class SubCutter:
 
 	def run_download(self):
 		try:
+			self._cleanDownloads()
 			self._download()
-			self._convert_to_srt()
-		except:
-			error_message("Error:  Something went wrong with the downloading process")
+		except Exception as e:
+			error_message("Error:  Something went wrong with the downloading process: \n{}".format(e))
 			return 1
 		return 0
-	
+
 	def run_extract(self):
 		try:	
 			sequences = self._make_list()
 			self._cleanAudio()
 			self._process(sequences)
-		except:
-			error_message("Error:  Something went wrong with the extracting process")
+		except Exception as e:
+			error_message("Error:  Something went wrong with the extracting process: \n{}".format(e))
 			return 1
 		return 0
 	
@@ -257,14 +338,21 @@ class MW(MineWindow):
 		self.download_button.clicked.connect(self.download)
 		self.extract_button.clicked.connect(self.extract)
 		self.add_button.clicked.connect(self.add_audio)
+		self.download_bar.setValue(0)
+		self.extract_bar.setValue(0)
+		self.add_bar.setValue(0)
 		self.time_slider.setDisabled(True)
 		self.begin_box.setDisabled(True)
 		self.end_box.setDisabled(True)
 		self.time_len = 1000
 		self.time_slider.startValueChanged.connect(self._update_begin)
 		self.time_slider.endValueChanged.connect(self._update_end)
+		self._get_options()
+		self.language_box.currentTextChanged.connect(self._save_options)
+		self.phrase_box.currentTextChanged.connect(self._save_options)
+		self.audio_box.currentTextChanged.connect(self._save_options)
 		self.setup_slider()
-			
+	
 	def setup_slider(self):
 		mp3_path = os.path.join(home, "downloads", "SC.mp3")
 		have_prev_mp3 = os.path.exists(mp3_path)
@@ -281,7 +369,6 @@ class MW(MineWindow):
 			self.time_len = float(m[1])
 			self.time_slider.setStart(0)
 			self.time_slider.setEnd(100)
-
 			self.time_slider.setDisabled(False)
 
 	def _update_begin(self, value):
@@ -301,7 +388,7 @@ class MW(MineWindow):
 					fields.append(x['name'])
 		self.phrase_box.addItems(fields)
 		self.audio_box.addItems(fields)
-						
+	
 	def download(self):
 		link = str(self.link_box.text())
 		try:
@@ -312,9 +399,12 @@ class MW(MineWindow):
 		if not link.startswith("https://www.youtube.com/watch?v="):
 			error_message("Invalid youtube link.")
 			return
-		self.sub_cutter = SubCutter(href = link, lang = sub_lang)
+		self.sub_cutter = SubCutter(href = link, 
+									lang = sub_lang, 
+									dl_bar = self.download_bar, 
+									ext_bar = self.extract_bar,
+									setup_range=self.setup_slider)
 		self.sub_cutter.run_download()
-		self.setup_slider()
 	
 	def extract(self):
 		begin = int(self.time_len * self.time_slider.start() / 100)
@@ -328,7 +418,10 @@ class MW(MineWindow):
 			mp3_file = getFile(self, _("Choose .mp3 file:"), cb = None, filter = _("*.mp3"), key = "media")
 			if mp3_file is None:
 				return
-			self.sub_cutter = SubCutter(begin = begin, end = end)
+			self.download_bar.setValue(100)
+			self.sub_cutter = SubCutter(begin = begin, end = end, 
+										dl_bar = self.download_bar, 
+										ext_bar = self.extract_bar)
 			self.sub_cutter.sub_path = srt_file
 			self.sub_cutter.audio_path = mp3_file
 		self.sub_cutter.begin = begin
@@ -336,12 +429,15 @@ class MW(MineWindow):
 		self.sub_cutter.run_extract()
 			
 	def add_audio(self):
+		if self.sub_cutter is None:
+			self.download_bar.setValue(100)
+			self.extract_bar.setValue(100)
+			self.add_bar.setValue(0)
 		mw = self.browser.mw
 		mw.checkpoint("batch edit")
 		mw.progress.start()
 		self.browser.model.beginReset()
 		cnt = 0
-		audio_dict = {}
 		atype = "mp3"
 		expr_fld = self.phrase_box.currentText()
 		audio_fld = self.audio_box.currentText()
@@ -353,7 +449,13 @@ class MW(MineWindow):
 			error_message("Please choose a type for audio field.")
 			return
 
+		total = len(self.nids)
+		cur = 0
+
 		for nid in self.nids:
+			cur = cur + 1
+			self.add_bar.setValue(cur / total * 100)
+
 			note = mw.col.getNote(nid)
 			if expr_fld in note and audio_fld in note:
 				if not note[expr_fld]:
@@ -375,6 +477,32 @@ class MW(MineWindow):
 		mw.progress.finish()
 		mw.reset()
 		tooltip("<b>Updated</b> {0} notes.".format(cnt), parent = self.browser)
+
+	def _save_options(self):
+		opts = {}
+		path = opt_path.replace("\\", "/")
+		opts['lang'] = self.language_box.currentText()
+		opts['expr_fld'] = self.phrase_box.currentText()
+		opts['audio_fld'] = self.audio_box.currentText()
+
+		with codecs.open(path, 'w', 'UTF-8') as opt_file:
+			opt_file.write(str(opts))
+
+	def _get_options(self):
+		opts = {}
+		path = opt_path.replace("\\", "/")
+		if os.stat(path).st_size:
+			try:
+				with codecs.open(path, 'r', 'UTF-8') as opt_file:
+					opts = eval(opt_file.read())
+				if opts['lang']:
+					self.language_box.setCurrentText(opts['lang'])
+				if opts['expr_fld']:
+					self.phrase_box.setCurrentText(opts['expr_fld'])
+				if opts['audio_fld']:
+					self.audio_box.setCurrentText(opts['audio_fld'])
+			except:
+				return
 
 def onBatchEdit(browser):
 	nids = browser.selectedNotes()
