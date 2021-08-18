@@ -35,6 +35,8 @@ unicode = str if not ANKI20 else unicode
 ANKI20 = anki_version.startswith("2.0")
 unicode = str if not ANKI20 else unicode
 
+sys.stderr.isatty = lambda : True
+
 initializeQtResources()
 
 home = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +89,16 @@ class Dl_thread(QtCore.QThread):
 		self.dl_bar = dl_bar
 		self.ffmpeg = "ffmpeg"
 	
+	def __str__(self):
+		mem_var = {}
+		mem_var['href'] = self.href
+		mem_var['lang'] = self.lang
+		mem_var['general_path'] = self.general_path
+		mem_var['audio_path'] = self.audio_path
+		mem_var['vtt_sub_path'] = self.vtt_sub_path
+		mem_var['audio_format'] = self.audio_format
+		return str(mem_var)
+
 	def _download_hook(self, d):
 		if d['status'] == 'finished':
 			self.done.emit(True)
@@ -96,6 +108,7 @@ class Dl_thread(QtCore.QThread):
 			self.dl_bar.setValue(float(p))
 
 	def run(self):
+		print(self)
 		ydl_opts = {'subtitleslangs': [self.lang], "skip_download": True, "writesubtitles": True, "subtitlesformat": 'vtt',
 				"outtmpl": self.general_path, "quiet":True, "no_warnings":True}
 		
@@ -109,7 +122,7 @@ class Dl_thread(QtCore.QThread):
 					'preferredcodec': self.audio_format,
 					'preferredquality': '192',
 					}], "outtmpl": self.audio_path, "quiet":True, "no_warnings":True}
-					
+
 		ydl = youtube_dl.YoutubeDL(ydl_opts)
 		ydl.download([self.href])
 		have_sub = os.path.exists(self.vtt_sub_path)
@@ -151,7 +164,7 @@ class Process_thread(QtCore.QThread):
 		out = codecs.open(output_sub.replace("\\", "/"), 'w', 'UTF-8')
 
 		command_format = self.ffmpeg + " -ss {0} -i \"{1}\" -ss 0 -c copy -t {2} -avoid_negative_ts make_zero -c:a libmp3lame \"{3}\""
-		use_shell = True if os.name == "nt" else False
+		use_shell = True
 		random_prefix = "".join(random.choice(string.ascii_letters) for i in range(str_length))
 		
 		total = len(self.sequences)
@@ -221,7 +234,7 @@ class SubCutter:
 
 	def _convert_to_srt(self):
 		command = self.ffmpeg + ' ' + '-i' + ' ' + self.vtt_sub_path + ' ' + self.sub_path + ' -loglevel quiet'
-		use_shell = True if os.name == "nt" else False
+		use_shell = True
 		try:
 			output = subprocess.check_output(command.replace("\\", "/"), shell=use_shell)
 			self.setup_range()	
@@ -363,9 +376,15 @@ class MW(MineWindow):
 			popen = subprocess.Popen(args, stdout = subprocess.PIPE)
 			popen.wait()
 			output = popen.stdout.read()
-			pat = re.compile(r'\[FORMAT\]\r\nduration=([\d\.]+)\r\n\[/FORMAT\]\r\n')
-			m = pat.match(output.decode('utf8'))
-
+			#Ffprobe output pattern for Windows
+			w_pat = re.compile(r'\[FORMAT\]\r\nduration=([\d\.]+)\r\n\[/FORMAT\]\r\n')
+			#Ffprobe output pattern for Linux
+			l_pat = re.compile(r'\[FORMAT\]\nduration=([\d\.]+)\n\[/FORMAT\]\n')
+			
+			m = w_pat.match(output.decode('utf8'))
+			if not m:
+				m = l_pat.match(output.decode('utf8'))
+			
 			self.time_len = float(m[1])
 			self.time_slider.setStart(0)
 			self.time_slider.setEnd(100)
@@ -410,12 +429,13 @@ class MW(MineWindow):
 		begin = int(self.time_len * self.time_slider.start() / 100)
 		end = int(self.time_len * self.time_slider.end() / 100)
 		if self.sub_cutter is None:
+			download_dir = os.path.join(home, "downloads")
 			srt_file = None
 			mp3_file = None
-			srt_file = getFile(self, _("Choose .srt file:"), cb = None, filter = _("*.srt"), key = "subtitle")
+			srt_file = getFile(self, _("Choose .srt file:"), dir = download_dir.replace("\\", "/"), cb = None, filter = _("*.srt"))
 			if srt_file is None:
 				return
-			mp3_file = getFile(self, _("Choose .mp3 file:"), cb = None, filter = _("*.mp3"), key = "media")
+			mp3_file = getFile(self, _("Choose .mp3 file:"), dir = download_dir.replace("\\", "/"), cb = None, filter = _("*.mp3"))
 			if mp3_file is None:
 				return
 			self.download_bar.setValue(100)
@@ -505,6 +525,13 @@ class MW(MineWindow):
 				return
 
 def onBatchEdit(browser):
+	dl_dir = os.path.join(home, 'downloads')
+	audio_dir = os.path.join(home, 'audio')
+	if not os.path.exists(dl_dir):
+		os.makedirs(dl_dir)
+	if not os.path.exists(audio_dir):
+		os.makedirs(audio_dir)
+		
 	nids = browser.selectedNotes()
 	if not nids:
 		tooltip("No cards selected.")
@@ -516,7 +543,7 @@ def setupMenu(browser):
 	menu = browser.form.menuEdit
 	menu.addSeparator()
 	a = menu.addAction('Mine audio...')
-	a.setShortcut(QKeySequence("Ctrl+Alt+M"))
+	a.setShortcut(QKeySequence('Ctrl+Alt+M'))
 	a.triggered.connect(lambda _, b=browser: onBatchEdit(b))
 
 def addToBrowser():
