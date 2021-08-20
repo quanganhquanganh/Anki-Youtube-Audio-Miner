@@ -13,7 +13,7 @@ Ffmpeg is a must, and it has to be callable from the terminal or command prompt.
 
 <strong>How I use this:</strong> 
 
-1. First I mine words on Youtube video by yomichan-ing the transcript (Or you can use whatever method works for you)
+1. First I mine the words on a Youtube video by yomichan-ing the transcript (Or you can use whatever method works for you)
 
 <img src="https://raw.githubusercontent.com/quanganhquanganh/Anki-Youtube-Audio-Miner/master/docs/yomichan.gif">
 
