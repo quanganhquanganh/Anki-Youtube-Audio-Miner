@@ -1,9 +1,9 @@
 # Anki-Youtube-Audio-Miner
-This is basically how I've been studying Japanese for the last couple of months now, so finally I'm sharing this pretty nifty tool that actually helped reigniting my passion for learning the language. 
+This is basically how I've been studying Japanese for the last couple of months now. It's pretty cool, I think.
 
 <strong>Introduction:</strong>
 
-It's a cool way to combine all of these 3 packages into one thing: watching youtube, word mining and shadowing practices. Of course subs2srs already succeeded at doing so and there are other addons like Youtube Subs2srs (that I kinda stole the code design from) that did similar stuff. But because yomichan was so effective at getting words and all of it's meaning from the web, I've been exclusively using that to mine words from Youtube, although it didn't actually take the audio from the youtube video, which left me kinda clueless when I'm trying to mimic the natives' accent and manners of speaking and what not. Thus, I made this addon.
+A way to combine all of these 3 packages into one thing: watching youtube, word mining and shadowing practices. Of course subs2srs already succeeded at doing so and there are other addons like Youtube Subs2srs (that I kinda stole the code design from) that did similar stuff. But because yomichan was so effective at getting words and all of it's meaning from the web, I've been exclusively using that to mine words from Youtube, although it didn't actually take the audio from the youtube video, which left me kinda clueless when I'm trying to mimic the natives' accent and manners of speaking and what not. Thus, I made this addon.
 
 
 <strong>Requirements:</strong> 
