@@ -26,7 +26,8 @@ import glob
 import subprocess
 import glob
 import fileinput
-import youtube_dl
+import imghdr
+import yt_dlp as youtube_dl
 import datetime
 
 ANKI20 = anki_version.startswith("2.0")
