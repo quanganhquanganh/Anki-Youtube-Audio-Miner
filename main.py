@@ -26,7 +26,8 @@ import glob
 import subprocess
 import glob
 import fileinput
-import youtube_dl
+import imghdr
+import yt_dlp as youtube_dl
 import datetime
 
 ANKI20 = anki_version.startswith("2.0")
@@ -105,10 +106,9 @@ class Dl_thread(QtCore.QThread):
 		if d['status'] == 'downloading':
 			p = d['_percent_str']
 			p = p.replace('%','')
-			self.dl_bar.setValue(float(p))
+			self.dl_bar.setValue(float(p) if float(p) >= 1 else 1)
 
 	def run(self):
-		print(self)
 		ydl_opts = {'subtitleslangs': [self.lang], "skip_download": True, "writesubtitles": True, "subtitlesformat": 'vtt',
 				"outtmpl": self.general_path, "quiet":True, "no_warnings":True}
 		
@@ -122,7 +122,8 @@ class Dl_thread(QtCore.QThread):
 					'preferredcodec': self.audio_format,
 					'preferredquality': '192',
 					}], "outtmpl": self.audio_path, "quiet":True, "no_warnings":True}
-
+		
+		self.dl_bar.setValue(1)
 		ydl = youtube_dl.YoutubeDL(ydl_opts)
 		ydl.download([self.href])
 		have_sub = os.path.exists(self.vtt_sub_path)
@@ -428,6 +429,7 @@ class MW(MineWindow):
 	def extract(self):
 		begin = int(self.time_len * self.time_slider.start() / 100)
 		end = int(self.time_len * self.time_slider.end() / 100)
+		
 		if self.sub_cutter is None:
 			download_dir = os.path.join(home, "downloads")
 			srt_file = None
@@ -439,13 +441,14 @@ class MW(MineWindow):
 			if mp3_file is None:
 				return
 			self.download_bar.setValue(100)
-			self.sub_cutter = SubCutter(begin = begin, end = end, 
-										dl_bar = self.download_bar, 
+			self.sub_cutter = SubCutter(dl_bar = self.download_bar, 
 										ext_bar = self.extract_bar)
 			self.sub_cutter.sub_path = srt_file
 			self.sub_cutter.audio_path = mp3_file
-		self.sub_cutter.begin = begin
-		self.sub_cutter.end = end
+		else:
+			self.sub_cutter.begin = begin
+			self.sub_cutter.end = end
+		
 		self.sub_cutter.run_extract()
 			
 	def add_audio(self):
