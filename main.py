@@ -31,6 +31,7 @@ import yt_dlp as youtube_dl
 import datetime
 import json
 import itertools
+import time
 from storage import Storage
 from setfields import SetFields
 from storagewindow import StorageWindow
@@ -58,27 +59,6 @@ def error_message(text,title="Error has occured"):
 	dialog.setText(text)
 	dialog.setIcon(QtWidgets.QMessageBox.Warning)
 	dialog.exec_()
-
-# class Sequence:
-# 	def __init__(self, begin, end, sentence):
-# 		self._begin = begin
-# 		self._end = end
-# 		self._sentence = sentence
-# 	def begin(self):
-# 		return self._begin
-# 	def end(self):
-# 		return self._end
-# 	def sentence(self):
-# 		return self._sentence
-
-# class AudioSequence:
-# 	def __init__(self, sequence, loc):
-# 		self._sequence = sequence
-# 		self._loc = loc
-# 	def seq(self):
-# 		return self._sequence
-# 	def loc(self):
-# 		return self._loc
 
 class Dl_thread(QtCore.QThread):
 	done_info = QtCore.pyqtSignal(dict)
@@ -118,33 +98,44 @@ class Dl_thread(QtCore.QThread):
 				p = 0
 			self.percent.emit(p)
 
-	def _download_info(self):
-		ydl_opts = {"subtitleslangs": [self.lang], 
+	def _download_info(self, extract_info = True):
+		prev_current = self._current
+		ydl_opts = {"subtitleslangs": [self.lang],
 					"progress_hooks": [self._download_hook],
 					"skip_download": True, 
 					"writeautomaticsub": True, 
 					"writesubtitles": True, 
-					"subtitlesformat": 'vtt',
+					"subtitlesformat": 'vtt',	
+					# "ignoreerrors": True,
 					"outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
 					"quiet":True, "no_warnings":True}
 		urls = []
-		for href in self.hrefs:
-			ydl = youtube_dl.YoutubeDL({
-				'extract_flat': True,
-			})
-			info = ydl.extract_info(href, download=False)
-			if 'entries' in info:
-				# Can be a playlist or a list of videos
-				entries = info['entries']
-				urls.extend([entry['url'] for entry in entries])
-			else:
-				# Just a video
-				urls.append(info['id'])
+		if extract_info:
+			for href in self.hrefs:
+				ydl = youtube_dl.YoutubeDL({
+					'extract_flat': True,
+				})
+				info = ydl.extract_info(href, download=False)
+				if 'entries' in info:
+					# Can be a playlist or a list of videos
+					entries = info['entries']
+					urls.extend([entry['url'] for entry in entries])
+				else:
+					# Just a video
+					urls.append(info['id'])
+		else:
+			urls = self.hrefs
+		# error_message("Downloading info...")
 		ydl = youtube_dl.YoutubeDL(ydl_opts)
-		ydl.download(urls)
+		try:
+			ydl.download(urls)
+		except Exception as e:
+			self.hrefs = urls[(self._current - prev_current):]
+			# error_message("Num of videos: " + str(len(self.hrefs)) + "\n" + str(e))
+			return self._download_info(extract_info = False)
 
-	def _download_audio(self):
-		error_message("Working!")
+	def _download_audio(self, extract_info = True):
+		prev_current = self._current
 		audio_opts = {'format': 'bestaudio/best',
 					'progress_hooks': [self._download_hook],
 					# 'postprocessors': [{
@@ -156,21 +147,28 @@ class Dl_thread(QtCore.QThread):
 					"quiet":True, "no_warnings":True}
 
 		urls = []
-		for href in self.hrefs:
-			ydl = youtube_dl.YoutubeDL({
-				'extract_flat': True,
-			})
-			info = ydl.extract_info(href, download=False)
-			if 'entries' in info:
-				# Can be a playlist or a list of videos
-				entries = info['entries']
-				urls.extend([entry['url'] for entry in entries])
-			else:
-				# Just a video
-				urls.append(info['id'])
-		
+		if extract_info:
+			for href in self.hrefs:
+				ydl = youtube_dl.YoutubeDL({
+					'extract_flat': True,
+				})
+				info = ydl.extract_info(href, download=False)
+				if 'entries' in info:
+					# Can be a playlist or a list of videos
+					entries = info['entries']
+					urls.extend([entry['url'] for entry in entries])
+				else:
+					# Just a video
+					urls.append(info['id'])
+		else:
+			urls = self.hrefs
 		ydl = youtube_dl.YoutubeDL(audio_opts)
-		ydl.download(urls)
+		try:
+			ydl.download(urls)
+		except Exception as e:
+			self.hrefs = urls[(self._current - prev_current):]
+			# error_message("Num of videos: " + str(len(self.hrefs)) + "\n" + str(e))
+			return self._download_audio(extract_info = False)
 
 	def run(self):
 		if self.only_info:
@@ -249,6 +247,7 @@ class SubCutter:
 		#Threads related
 		self._dl_thread = None
 		self._ext_thread = None
+		self._matched_videos = None
 		self._downloaded_videos = None
 		self._current = 0
 
@@ -299,8 +298,6 @@ class SubCutter:
 		# 	if not os.path.exists(v['path']):
 		# 		available.remove(v)
 
-		self._downloaded_videos = iter([])
-
 		def add_downloaded(done_info):
 			id = done_info['id']
 			filename = done_info['filename']
@@ -322,7 +319,7 @@ class SubCutter:
 			if self._ext_thread is not None:
 				self._ext_thread.terminate()
 
-			sequences = self._db.get_matched_sequences(exprs, video['id'])
+			sequences = self._matched_videos[video['id']]
 			self._ext_thread = Process_thread(video['path'], 
 											extract_path=self.extract_path, 
 											sequences=sequences, 
@@ -333,9 +330,16 @@ class SubCutter:
 			self._current += 1
 			self._ext_status.setText(str(self._current))
 
-		hrefs = [v['id'] for v in self._db.get_matched_videos(exprs)]
+		self._matched_videos = self._db.get_matched_videos_and_sequences(exprs)
+		if len(self._matched_videos) == 0:
+			# self._ext_status.setText("0")
+			error_message("No videos found")
+			return
+		hrefs = list(self._matched_videos.keys())
+		self._downloaded_videos = iter([])
 		error_message("Downloading {0} videos".format(len(hrefs)))
 		error_message(str(hrefs))
+		error_message(str(self._matched_videos))
 		self._dl_thread = Dl_thread(hrefs = hrefs, lang = self.lang, 
 								download_path = self.download_path,
 								only_info = False)
@@ -442,12 +446,13 @@ class SubCutter:
 	# 		return
 	
 	def run(self, exprs):
-		try:
+		# try:
+			self._db.delete_all_files()
 			self._clean_downloads()
 			self._process(exprs)
-		except Exception as e:
-			error_message("Error:  Something went wrong with the extracting process: \n{}".format(e))
-			return
+		# except Exception as e:
+		# 	error_message("Error:  Something went wrong with the extracting process: \n{}".format(e))
+		# 	return
 
 class MW(MineWindow):
 	def __init__(self, browser):
@@ -491,11 +496,18 @@ class MW(MineWindow):
 		nids = self.browser.selectedNotes()
 		self.exprs = []
 		self.nids = nids
-		expr_fld = 'Front'
+		expr_fld = 'sentence'
+		audio_fld = 'audio'
 		# self.phrase_box.currentText()
 		for nid in nids:
 			note = self.col.getNote(nid)
-			if expr_fld in note:
+			if expr_fld in note and audio_fld in note:
+				if not note[expr_fld]:
+					continue
+				if note[audio_fld]:
+					audio_id = note[audio_fld].split(":")[1].split("]")[0].split(".")[0]
+					if self.db.get_sequence(audio_id) is not None:
+						continue
 				self.exprs.append(note[expr_fld])
 
 	def _update_begin(self, value):
@@ -515,6 +527,13 @@ class MW(MineWindow):
 					fields.append(x['name'])
 		# self.phrase_box.addItems(fields)
 		# self.audio_box.addItems(fields)
+
+	def _toggle_buttons(self, state):
+		self.store_button.setDisabled(state)
+		self.set_fields_button.setDisabled(state)
+		self.open_storage_button.setDisabled(state)
+		self.add_button.setDisabled(state)
+		self.create_deck_button.setDisabled(state)
 	
 	def download(self):
 		link = str(self.link_box.text())
@@ -564,6 +583,9 @@ class MW(MineWindow):
 										dl_status=self.download_status,
 										ext_status=self.extract_status)
 		self.get_expressions()
+		if len(self.exprs) == 0:
+			error_message("No new audio needed to be add.")
+			return
 		self.sub_cutter.run(self.exprs)
 
 	def store_video(self):
@@ -615,7 +637,6 @@ class MW(MineWindow):
 			error_message("Please choose a type for audio field.")
 			return
 
-		self.get_expressions()
 		total = len(self.nids)
 		cur = 0
 

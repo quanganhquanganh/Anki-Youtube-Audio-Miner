@@ -184,7 +184,31 @@ class Storage:
             for line in lines:
                 cursor.execute("""
                     SELECT * FROM videos WHERE id IN (SELECT video_id FROM sequences WHERE line LIKE ?)""", ("%" + line + "%",))
-                matched_videos = list({v['id']:v for v in cursor.fetchall() + matched_videos}.values())
+                # matched_videos = list({v['id']:v for v in cursor.fetchall() + matched_videos}.values())
+                #Fetch only one video
+                matched_videos = list({cursor.fetchone()['id'] + matched_videos}.values())
+            return matched_videos
+
+    def get_matched_videos_and_sequences(self, lines) -> dict:
+        with sqlite3.connect(self.db_name) as db:
+            db.row_factory = dict_factory
+            cursor = db.cursor()
+            matched_videos = {}
+
+            #If the sequence's line includes the search keyword, then it's a matched sequence
+            for line in lines:
+                cursor.execute("""
+                    SELECT * FROM sequences WHERE line LIKE ? LIMIT 1""", ("%" + line + "%",))
+                seq = cursor.fetchone()
+                # for sequence in matched_sequences:
+                #     matched_videos[sequence['video_id']] = matched_videos.get(sequence['video_id'], []) + [sequence]
+                if seq is not None:
+                    matched_videos[seq['video_id']] = matched_videos.get(seq['video_id'], []) + [seq]
+                # cursor.execute("""
+                #     SELECT * FROM videos WHERE id IN (SELECT video_id FROM sequences WHERE line LIKE ?)""", ("%" + line + "%",))
+                # matched_videos = list({v['id']:v for v in cursor.fetchall() + matched_videos}.values())
+                #Fetch only one video
+                # matched_videos = list({cursor.fetchone()['id'] + matched_videos}.values())
             return matched_videos
 
     def get_sequence(self, id):
