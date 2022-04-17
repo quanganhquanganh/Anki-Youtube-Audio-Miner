@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 
 def dict_factory(cursor, row):
     d = {}
@@ -6,14 +7,10 @@ def dict_factory(cursor, row):
         d[col[0]] = row[idx]
     return d
 
-# def sqlite_connect(db_file):
-#     conn = sqlite3.connect(db_file)
-#     conn.row_factory = dict_factory
-#     return conn
-
 class Storage:
     def __init__(self, db_name):
         self.db_name = db_name
+
     def create_table(self):
         with sqlite3.connect(self.db_name) as db:
             db.row_factory = dict_factory
@@ -42,17 +39,17 @@ class Storage:
                     name TEXT,
                     value TEXT
                 )""")
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS files (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    path TEXT,
-                    sequence_id TEXT,
-                    FOREIGN KEY (sequence_id) REFERENCES sequences(id) ON DELETE CASCADE
-                )""")
+            # cursor.execute("""
+            #     CREATE TABLE IF NOT EXISTS files (
+            #         id TEXT PRIMARY KEY,
+            #         name TEXT,
+            #         path TEXT,
+            #         sequence_id TEXT,
+            #         FOREIGN KEY (sequence_id) REFERENCES sequences(id) ON DELETE CASCADE
+            #     )""")
             db.commit()
 
-    def insert_video(self, title, url, lang, status, date):
+    def insert_video(self, title, url, lang, date):
         #Insert video only when it's url is unique and return the video_id
         with sqlite3.connect(self.db_name) as db:
             db.row_factory = dict_factory
@@ -200,15 +197,25 @@ class Storage:
                 cursor.execute("""
                     SELECT * FROM sequences WHERE line LIKE ? LIMIT 1""", ("%" + line + "%",))
                 seq = cursor.fetchone()
-                # for sequence in matched_sequences:
-                #     matched_videos[sequence['video_id']] = matched_videos.get(sequence['video_id'], []) + [sequence]
                 if seq is not None:
                     matched_videos[seq['video_id']] = matched_videos.get(seq['video_id'], []) + [seq]
-                # cursor.execute("""
-                #     SELECT * FROM videos WHERE id IN (SELECT video_id FROM sequences WHERE line LIKE ?)""", ("%" + line + "%",))
-                # matched_videos = list({v['id']:v for v in cursor.fetchall() + matched_videos}.values())
-                #Fetch only one video
-                # matched_videos = list({cursor.fetchone()['id'] + matched_videos}.values())
+            return matched_videos
+
+    def get_matchings(self, notes) -> dict:
+        with sqlite3.connect(self.db_name) as db:
+            db.row_factory = dict_factory
+            cursor = db.cursor()
+            matched_videos = {}
+
+            #If the sequence's line includes the search keyword, then it's a matched sequence
+            for note in notes:
+                cursor.execute("""
+                    SELECT * FROM sequences WHERE line LIKE ? LIMIT 1""", ("%" + note['expr'] + "%",))
+                seq = cursor.fetchone()
+                if seq is not None:
+                    seq['note'] = note
+                    matched_videos[seq['video_id']] = matched_videos.get(seq['video_id'], {})
+                    matched_videos[seq['video_id']][seq['id']] = seq
             return matched_videos
 
     def get_sequence(self, id):
