@@ -75,6 +75,7 @@ class SearchThread(QtCore.QThread):
 
 class AddThread(QtCore.QThread):
 	percent = QtCore.pyqtSignal(int)
+	done = QtCore.pyqtSignal()
 
 	def __init__(self, mappings, browser):
 		super().__init__()
@@ -101,16 +102,16 @@ class AddThread(QtCore.QThread):
 			url_fld = seq['note']['url_fld'] if 'url_fld' in seq['note'] else None
 
 			note = mw.col.getNote(nid)
-			if audio_fld:
+			if audio_fld and audio_fld in note:
 				if 'filepath' not in seq:
 					continue
 				filepath = seq['filepath']
 				audiofname = mw.col.media.addFile(filepath)
 				note[audio_fld] = "[sound:" + audiofname + "]"
-			if sentence_fld:
+			if sentence_fld and sentence_fld in note:
 				note[sentence_fld] = seq['line']
 			# Get the Youtube URL from the video's id and start time
-			if url_fld:
+			if url_fld and url_fld in note:
 				url = "https://www.youtube.com/embed/" + seq['video_id'] + "?start=" + str(int(float(seq['start_time'])))
 				embedded_html = "<iframe width=\"560\" height=\"315\" src=\"" + url + "\" frameborder=\"0\" allow=\"accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>"
 				note[url_fld] = embedded_html
@@ -122,13 +123,13 @@ class AddThread(QtCore.QThread):
 		mw.progress.finish()
 		mw.reset()
 		tooltip("<b>Updated</b> {0} notes.".format(cnt), parent = self.browser)
-			
+		self.done.emit()
 
 class DownloadThread(QtCore.QThread):
 	done_info = QtCore.pyqtSignal(dict)
 	percent = QtCore.pyqtSignal(float)
 	amount = QtCore.pyqtSignal(str)
-	finished = QtCore.pyqtSignal()
+	done = QtCore.pyqtSignal()
 
 	def __init__(self, 
 				hrefs: list,
@@ -154,7 +155,7 @@ class DownloadThread(QtCore.QThread):
 			self._current = self._current + 1
 			self.amount.emit(str(self._current))
 			if self._current == self._total:
-				self.finished.emit()
+				self.done.emit()
 
 		if d['status'] == 'downloading':
 			p = d['_percent_str']
@@ -339,7 +340,10 @@ class SubCutter:
 		srt_filepath = None
 		try:
 			srt_filepath = self._convert_to_srt(filename)
-			sequences = [s.rstrip() for s in self._make_list(srt_filepath)]
+			sequences = []
+			for s in self._make_list(srt_filepath):
+				s[2] = s[2].replace("\n", "")
+				sequences.append(s)
 			self._db.insert_video(info['title'], video_id, self.lang, datetime.datetime.now())
 			self._db.insert_sequences(video_id, sequences)
 		except Exception as e:
@@ -369,8 +373,11 @@ class SubCutter:
 		except StopIteration:
 			if self._finish_download:
 				# Start AddThread
+				self._ext_thread.terminate()
+				self._ext_thread = None
 				self._add_thread = AddThread(self._matchings, self._browser)
 				self._add_thread.percent.connect(self._add_bar.setValue)
+				self._add_thread.done.connect(self._add_thread.terminate)
 				self._add_thread.start()
 			self._ext_thread = None
 			return
@@ -425,7 +432,7 @@ class SubCutter:
 			self._finish_download = True
 			self._dl_thread.terminate()
 			self._dl_thread = None
-		self._dl_thread.finished.connect(finish_dl_thread)
+		self._dl_thread.done.connect(finish_dl_thread)
 		self._dl_thread.start()
 		self._process_next()
 
@@ -568,8 +575,11 @@ class MW(MineWindow):
 				if not note[expr_fld]:
 					continue
 				if note[audio_fld]:
-					audio_id = note[audio_fld].split(":")[1].split("]")[0].split(".")[0]
-					if self.db.get_sequence(audio_id) is not None:
+					try:
+						audio_id = note[audio_fld].split(":")[1].split("]")[0].split(".")[0]
+						if self.db.get_sequence(audio_id) is not None:
+							continue
+					except Exception as e:
 						continue
 				notes.append({'nid': nid, 'expr': note[expr_fld], 
 										'audio_fld': audio_fld, 'expr_fld': expr_fld, 
@@ -844,8 +854,8 @@ def onBatchEdit(browser):
 		os.makedirs(dl_dir)
 	if not os.path.exists(audio_dir):
 		os.makedirs(audio_dir)
-	browser.widget = MW(browser)
-	browser.widget.show()
+	browser.ymw_widget = MW(browser)
+	browser.ymw_widget.show()
 
 def setupMenu(browser):
 	menu = browser.form.menuEdit

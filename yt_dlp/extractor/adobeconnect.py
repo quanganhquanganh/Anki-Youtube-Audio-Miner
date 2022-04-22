@@ -14,7 +14,7 @@ class AdobeConnectIE(InfoExtractor):
     def _real_extract(self, url):
         video_id = self._match_id(url)
         webpage = self._download_webpage(url, video_id)
-        title = self._html_search_regex(r'<title>(.+?)</title>', webpage, 'title')
+        title = self._html_extract_title(webpage)
         qs = compat_parse_qs(self._search_regex(r"swfUrl\s*=\s*'([^']+)'", webpage, 'swf url').split('?')[1])
         is_live = qs.get('isLive', ['false'])[0] == 'true'
         formats = []
@@ -31,7 +31,7 @@ class AdobeConnectIE(InfoExtractor):
 
         return {
             'id': video_id,
-            'title': self._live_title(title) if is_live else title,
+            'title': title,
             'formats': formats,
             'is_live': is_live,
         }

@@ -19,7 +19,7 @@ from ..utils import (
 
 
 class TV2IE(InfoExtractor):
-    _VALID_URL = r'https?://(?:www\.)?tv2\.no/v/(?P<id>\d+)'
+    _VALID_URL = r'https?://(?:www\.)?tv2\.no/v\d*/(?P<id>\d+)'
     _TESTS = [{
         'url': 'http://www.tv2.no/v/916509/',
         'info_dict': {
@@ -33,6 +33,9 @@ class TV2IE(InfoExtractor):
             'view_count': int,
             'categories': list,
         },
+    }, {
+        'url': 'http://www.tv2.no/v2/916509',
+        'only_matching': True,
     }]
     _PROTOCOLS = ('HLS', 'DASH')
     _GEO_COUNTRIES = ['NO']
@@ -78,9 +81,7 @@ class TV2IE(InfoExtractor):
                 elif ext == 'm3u8':
                     if not data.get('drmProtected'):
                         formats.extend(self._extract_m3u8_formats(
-                            video_url, video_id, 'mp4',
-                            'm3u8' if is_live else 'm3u8_native',
-                            m3u8_id=format_id, fatal=False))
+                            video_url, video_id, 'mp4', live=is_live, m3u8_id=format_id, fatal=False))
                 elif ext == 'mpd':
                     formats.extend(self._extract_mpd_formats(
                         video_url, video_id, format_id, fatal=False))
@@ -103,7 +104,7 @@ class TV2IE(InfoExtractor):
         return {
             'id': video_id,
             'url': video_url,
-            'title': self._live_title(title) if is_live else title,
+            'title': title,
             'description': strip_or_none(asset.get('description')),
             'thumbnails': thumbnails,
             'timestamp': parse_iso8601(asset.get('live_broadcast_time') or asset.get('update_time')),
@@ -241,9 +242,7 @@ class KatsomoIE(InfoExtractor):
                 elif ext == 'm3u8':
                     if not data.get('drmProtected'):
                         formats.extend(self._extract_m3u8_formats(
-                            video_url, video_id, 'mp4',
-                            'm3u8' if is_live else 'm3u8_native',
-                            m3u8_id=format_id, fatal=False))
+                            video_url, video_id, 'mp4', live=is_live, m3u8_id=format_id, fatal=False))
                 elif ext == 'mpd':
                     formats.extend(self._extract_mpd_formats(
                         video_url, video_id, format_id, fatal=False))
@@ -268,7 +267,7 @@ class KatsomoIE(InfoExtractor):
         return {
             'id': video_id,
             'url': video_url,
-            'title': self._live_title(title) if is_live else title,
+            'title': title,
             'description': strip_or_none(asset.get('description')),
             'thumbnails': thumbnails,
             'timestamp': parse_iso8601(asset.get('createTime')),

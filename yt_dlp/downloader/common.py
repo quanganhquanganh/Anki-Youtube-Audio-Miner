@@ -4,12 +4,15 @@ import os
 import re
 import time
 import random
+import errno
 
 from ..utils import (
     decodeArgument,
     encodeFilename,
     error_to_compat_str,
     format_bytes,
+    LockingUnsupportedError,
+    sanitize_open,
     shell_quote,
     timeconvert,
     timetuple_from_msec,
@@ -39,6 +42,7 @@ class FileDownloader(object):
     ratelimit:          Download speed limit, in bytes/sec.
     throttledratelimit: Assume the download is being throttled below this speed (bytes/sec)
     retries:            Number of times to retry for HTTP error 5xx
+    file_access_retries:   Number of times to retry on file access error
     buffersize:         Size of download buffer in bytes.
     noresizebuffer:     Do not automatically resize the download buffer.
     continuedl:         Try to continue downloads if possible.
@@ -93,6 +97,8 @@ class FileDownloader(object):
     def format_percent(percent):
         if percent is None:
             return '---.-%'
+        elif percent == 100:
+            return '100%'
         return '%6s' % ('%3.1f%%' % percent)
 
     @staticmethod
@@ -154,7 +160,7 @@ class FileDownloader(object):
         return int(round(number * multiplier))
 
     def to_screen(self, *args, **kargs):
-        self.ydl.to_stdout(*args, quiet=self.params.get('quiet'), **kargs)
+        self.ydl.to_screen(*args, quiet=self.params.get('quiet'), **kargs)
 
     def to_stderr(self, message):
         self.ydl.to_stderr(message)
@@ -205,13 +211,44 @@ class FileDownloader(object):
     def ytdl_filename(self, filename):
         return filename + '.ytdl'
 
+    def wrap_file_access(action, *, fatal=False):
+        def outer(func):
+            def inner(self, *args, **kwargs):
+                file_access_retries = self.params.get('file_access_retries', 0)
+                retry = 0
+                while True:
+                    try:
+                        return func(self, *args, **kwargs)
+                    except (IOError, OSError) as err:
+                        retry = retry + 1
+                        if retry > file_access_retries or err.errno not in (errno.EACCES, errno.EINVAL):
+                            if not fatal:
+                                self.report_error(f'unable to {action} file: {err}')
+                                return
+                            raise
+                        self.to_screen(
+                            f'[download] Unable to {action} file due to file access error. '
+                            f'Retrying (attempt {retry} of {self.format_retries(file_access_retries)}) ...')
+                        time.sleep(0.01)
+            return inner
+        return outer
+
+    @wrap_file_access('open', fatal=True)
+    def sanitize_open(self, filename, open_mode):
+        f, filename = sanitize_open(filename, open_mode)
+        if not getattr(f, 'locked', None):
+            self.write_debug(f'{LockingUnsupportedError.msg}. Proceeding without locking', only_once=True)
+        return f, filename
+
+    @wrap_file_access('remove')
+    def try_remove(self, filename):
+        os.remove(filename)
+
+    @wrap_file_access('rename')
     def try_rename(self, old_filename, new_filename):
         if old_filename == new_filename:
             return
-        try:
-            os.replace(old_filename, new_filename)
-        except (IOError, OSError) as err:
-            self.report_error(f'unable to rename file: {err}')
+        os.replace(old_filename, new_filename)
 
     def try_utime(self, filename, last_modified_hdr):
         """Try to set the last-modified time of the given file."""
@@ -244,14 +281,32 @@ class FileDownloader(object):
         elif self.ydl.params.get('logger'):
             self._multiline = MultilineLogger(self.ydl.params['logger'], lines)
         elif self.params.get('progress_with_newline'):
-            self._multiline = BreaklineStatusPrinter(self.ydl._screen_file, lines)
+            self._multiline = BreaklineStatusPrinter(self.ydl._out_files['screen'], lines)
         else:
-            self._multiline = MultilinePrinter(self.ydl._screen_file, lines, not self.params.get('quiet'))
+            self._multiline = MultilinePrinter(self.ydl._out_files['screen'], lines, not self.params.get('quiet'))
+        self._multiline.allow_colors = self._multiline._HAVE_FULLCAP and not self.params.get('no_color')
 
     def _finish_multiline_status(self):
         self._multiline.end()
 
-    def _report_progress_status(self, s):
+    _progress_styles = {
+        'downloaded_bytes': 'light blue',
+        'percent': 'light blue',
+        'eta': 'yellow',
+        'speed': 'green',
+        'elapsed': 'bold white',
+        'total_bytes': '',
+        'total_bytes_estimate': '',
+    }
+
+    def _report_progress_status(self, s, default_template):
+        for name, style in self._progress_styles.items():
+            name = f'_{name}_str'
+            if name not in s:
+                continue
+            s[name] = self._format_progress(s[name], style)
+        s['_default_template'] = default_template % s
+
         progress_dict = s.copy()
         progress_dict.pop('info_dict')
         progress_dict = {'info': s['info_dict'], 'progress': progress_dict}
@@ -263,6 +318,10 @@ class FileDownloader(object):
         self.to_console_title(self.ydl.evaluate_outtmpl(
             progress_template.get('download-title') or 'yt-dlp %(progress._default_template)s',
             progress_dict))
+
+    def _format_progress(self, *args, **kwargs):
+        return self.ydl._format_text(
+            self._multiline.stream, self._multiline.allow_colors, *args, **kwargs)
 
     def report_progress(self, s):
         if s['status'] == 'finished':
@@ -276,8 +335,7 @@ class FileDownloader(object):
                 s['_elapsed_str'] = self.format_seconds(s['elapsed'])
                 msg_template += ' in %(_elapsed_str)s'
             s['_percent_str'] = self.format_percent(100)
-            s['_default_template'] = msg_template % s
-            self._report_progress_status(s)
+            self._report_progress_status(s, msg_template)
             return
 
         if s['status'] != 'downloading':
@@ -286,7 +344,7 @@ class FileDownloader(object):
         if s.get('eta') is not None:
             s['_eta_str'] = self.format_eta(s['eta'])
         else:
-            s['_eta_str'] = 'Unknown ETA'
+            s['_eta_str'] = 'Unknown'
 
         if s.get('total_bytes') and s.get('downloaded_bytes') is not None:
             s['_percent_str'] = self.format_percent(100 * s['downloaded_bytes'] / s['total_bytes'])
@@ -318,13 +376,12 @@ class FileDownloader(object):
                 else:
                     msg_template = '%(_downloaded_bytes_str)s at %(_speed_str)s'
             else:
-                msg_template = '%(_percent_str)s % at %(_speed_str)s ETA %(_eta_str)s'
+                msg_template = '%(_percent_str)s at %(_speed_str)s ETA %(_eta_str)s'
         if s.get('fragment_index') and s.get('fragment_count'):
             msg_template += ' (frag %(fragment_index)s/%(fragment_count)s)'
         elif s.get('fragment_index'):
             msg_template += ' (frag %(fragment_index)s)'
-        s['_default_template'] = msg_template % s
-        self._report_progress_status(s)
+        self._report_progress_status(s, msg_template)
 
     def report_resuming_byte(self, resume_len):
         """Report attempt to resume at given byte."""
@@ -375,6 +432,7 @@ class FileDownloader(object):
                     'status': 'finished',
                     'total_bytes': os.path.getsize(encodeFilename(filename)),
                 }, info_dict)
+                self._finish_multiline_status()
                 return True, False
 
         if subtitle is False:
