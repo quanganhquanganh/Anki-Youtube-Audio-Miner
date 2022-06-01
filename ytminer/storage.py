@@ -1,5 +1,6 @@
 import sqlite3
-import threading
+
+from ytminer.messages import error_message
 
 def dict_factory(cursor, row):
     d = {}
@@ -122,12 +123,28 @@ class Storage:
                 SELECT status FROM videos WHERE id LIKE ?""", (video_id,))
             return cursor.fetchone()
 
+    def get_sequence_from_sentence(self, sentence):
+        with sqlite3.connect(self.db_name) as db:
+            db.row_factory = dict_factory
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT * FROM sequences WHERE line = ?""", (sentence,))
+            return cursor.fetchone()
+
     def get_videos(self):
         with sqlite3.connect(self.db_name) as db:
             db.row_factory = dict_factory
             cursor = db.cursor()
             cursor.execute("""
                 SELECT * FROM videos""")
+            return cursor.fetchall()
+
+    def get_matched_videos_page(self, query, page=1, limit=10):
+        with sqlite3.connect(self.db_name) as db:
+            db.row_factory = dict_factory
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT * FROM videos WHERE title LIKE ? LIMIT ? OFFSET ?""", ('%' + query + '%', limit, (page - 1) * limit))
             return cursor.fetchall()
 
     def get_video(self, video_id):
@@ -137,14 +154,6 @@ class Storage:
             cursor.execute("""
                 SELECT * FROM videos WHERE id = ?""", (video_id,))
             return cursor.fetchone()
-
-    def get_subtitles(self, video_id):
-        with sqlite3.connect(self.db_name) as db:
-            db.row_factory = dict_factory
-            cursor = db.cursor()
-            cursor.execute("""
-                SELECT * FROM sub_lines WHERE video_id = ?""", (video_id,))
-            return cursor.fetchall()
 
     def search_matched_sequences_by_line(self, line):
         with sqlite3.connect(self.db_name) as db:
@@ -206,16 +215,22 @@ class Storage:
             db.row_factory = dict_factory
             cursor = db.cursor()
             matched_videos = {}
-
+            
             #If the sequence's line includes the search keyword, then it's a matched sequence
-            for note in notes:
+            for key, note in notes.items():
+                max_idx = max([y for x in note.values() if type(x) == dict for y in x.keys()])
+                min_idx = min([y for x in note.values() if type(x) == dict for y in x.keys()])
                 cursor.execute("""
-                    SELECT * FROM sequences WHERE line LIKE ? LIMIT 1""", ("%" + note['expr'] + "%",))
-                seq = cursor.fetchone()
-                if seq is not None:
-                    seq['note'] = note
-                    matched_videos[seq['video_id']] = matched_videos.get(seq['video_id'], {})
-                    matched_videos[seq['video_id']][seq['id']] = seq
+                    SELECT * FROM sequences WHERE line LIKE ? LIMIT ? OFFSET ?""", ("%" + note['expr'] + "%", max_idx - min_idx + 1, min_idx))
+                seqs = cursor.fetchall()
+                if seqs is not None:
+                    for idx, seq in enumerate(seqs):
+                        if idx in [y for x in note.values() if type(x) == dict for y in x.keys()]:
+                            seq['note'] = note
+                            seq['note']['nid'] = key
+                            seq['pos'] = idx
+                            matched_videos[seq['video_id']] = matched_videos.get(seq['video_id'], {})
+                            matched_videos[seq['video_id']][seq['id']] = seq
             return matched_videos
 
     def get_sequence(self, id):
@@ -236,6 +251,14 @@ class Storage:
                     SELECT * FROM sequences WHERE line LIKE ? AND video_id = ?""", ("%" + line + "%", video_id))
                 matched_sequences.extend(cursor.fetchall())
             return matched_sequences
+
+    def get_matched_sequences_page(self, query, page=1, limit=10):
+        with sqlite3.connect(self.db_name) as db:
+            db.row_factory = dict_factory
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT * FROM sequences WHERE line LIKE ? LIMIT ? OFFSET ?""", ('%' + query + '%', limit, (page - 1) * limit))
+            return cursor.fetchall()
 
     def get_settings(self):
         with sqlite3.connect(self.db_name) as db:
