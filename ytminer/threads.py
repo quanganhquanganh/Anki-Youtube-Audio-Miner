@@ -97,7 +97,10 @@ class DownloadThread(QtCore.QThread):
 				format(self._current + 1, self._total, ". Inserting subtitles..." if self.only_info else ""))
 			filename = os.path.basename(d['filename'])
 			url = filename.split(".")[0]
-			_info = youtube_dl.YoutubeDL().extract_info(url, download=False)
+			_info = youtube_dl.YoutubeDL({
+        'quiet': True,
+        'no_warnings': True,
+      }).extract_info(url, download=False)		
 			_info['filename'] = d['filename']
 			self.done_info.emit(_info)
 			self._current = self._current + 1
@@ -123,6 +126,8 @@ class DownloadThread(QtCore.QThread):
 			for href in urls:
 				ydl = youtube_dl.YoutubeDL({
 					'extract_flat': True,
+          'quiet': True,
+          'no_warnings': True,
 				})
 				info = ydl.extract_info(href, download=False)
 				if 'entries' in info:

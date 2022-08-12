@@ -1,6 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import random
 import re
 import time
@@ -25,6 +22,7 @@ from ..utils import (
 
 class BandcampIE(InfoExtractor):
     _VALID_URL = r'https?://[^/]+\.bandcamp\.com/track/(?P<id>[^/?#&]+)'
+    _EMBED_REGEX = [r'<meta property="og:url"[^>]*?content="(?P<url>.*?bandcamp\.com.*?)"']
     _TESTS = [{
         'url': 'http://youtube-dl.bandcamp.com/track/youtube-dl-test-song',
         'md5': 'c557841d5e50261777a6585648adf439',
@@ -439,7 +437,7 @@ class BandcampUserIE(InfoExtractor):
         uploader = self._match_id(url)
         webpage = self._download_webpage(url, uploader)
 
-        discography_data = (re.findall(r'<li data-item-id=["\'][^>]+>\s*<a href=["\']([^"\']+)', webpage)
+        discography_data = (re.findall(r'<li data-item-id=["\'][^>]+>\s*<a href=["\'](?![^"\'/]*?/merch)([^"\']+)', webpage)
                             or re.findall(r'<div[^>]+trackTitle["\'][^"\']+["\']([^"\']+)', webpage))
 
         return self.playlist_from_matches(

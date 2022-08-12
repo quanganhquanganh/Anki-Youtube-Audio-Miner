@@ -1,6 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import re
 from uuid import uuid4
 
@@ -223,7 +220,7 @@ class ZattooPlatformBaseIE(InfoExtractor):
             'id': channel_name,
             'title': channel_name,
             'is_live': True,
-            'format': formats,
+            'formats': formats,
             'subtitles': subtitles
         }
 
