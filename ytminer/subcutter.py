@@ -58,11 +58,16 @@ class SubCutter():
 		self._matchings = None
 		self._downloaded_videos = None
 		self._finish_download = False
+		self.done_flag = False
+
+	def update_options(self, **kwargs):
+		for key, value in kwargs.items():
+			setattr(self, key, value)
 
 	def _download_info(self, hrefs, finished_callback = None):
 		self._dl_bar.setValue(0)
-		if self._dl_thread is not None:
-			self._dl_thread.terminate()
+		# if self._dl_thread is not None:
+		# 	self._dl_thread.terminate()
 		self._dl_thread = DownloadThread(hrefs = hrefs, lang = self.lang, 
 								download_path = self.download_path,
 								only_info = True)
@@ -93,9 +98,9 @@ class SubCutter():
 		except Exception as e:
 			self._db.delete_video_by_id(video_id)
 			error_message("Error while processing video {0}".format(e))
-		if(os.path.exists(filename)):
+		if os.path.exists(filename):
 			os.remove(filename)
-		if(srt_filepath and os.path.exists(srt_filepath)):
+		if srt_filepath and os.path.exists(srt_filepath):
 			os.remove(srt_filepath)
 
 	# def _create_deck(self, info):
@@ -137,18 +142,20 @@ class SubCutter():
 			if self._finish_download:
 				self._ext_status.setText("Finished")
 				# Start AddThread
-				if self._ext_thread is not None:
-					self._ext_thread.terminate()
+				# if self._ext_thread is not None:
+				# 	self._ext_thread.terminate()
+				# if self._add_thread is not None:
+				# 	self._add_thread.terminate()
 				self._add_thread = AddThread(self._matchings, self._browser)
 				self._add_thread.percent.connect(self._add_bar.setValue)
-				self._add_thread.done.connect(self._add_thread.terminate)
+				self._add_thread.done.connect(self.close)
 				self._add_thread.start()
 			else:			
 				self._ext_status.setText("Waiting for download...")
 			self._ext_thread = None
 			return
-		if self._ext_thread is not None:
-			self._ext_thread.terminate()
+		# if self._ext_thread is not None:
+		# 	self._ext_thread.terminate()
 
 		sequences = self._matchings[video['id']]
 		# Convert sequences to list
@@ -167,12 +174,12 @@ class SubCutter():
 		self._ext_bar.setValue(0)
 		self._add_bar.setValue(0)
 		
-		if self._dl_thread is not None:
-			self._dl_thread.terminate()
-		if self._ext_thread is not None:
-			self._ext_thread.terminate()
-		if self._add_thread is not None:
-			self._add_thread.terminate()
+		# if self._dl_thread is not None:
+		# 	self._dl_thread.terminate()
+		# if self._ext_thread is not None:
+		# 	self._ext_thread.terminate()
+		# if self._add_thread is not None:
+		# 	self._add_thread.terminate()
 		
 		self._finish_download = False
 		self._matchings = matchings
@@ -191,12 +198,11 @@ class SubCutter():
 		for f in files:
 			# Check if file name is in audio_hrefs
 			video_id = os.path.basename(f).split(".")[0]
-			if video_id in audio_hrefs:
+			if video_id in audio_hrefs and len(os.path.basename(f).split(".")) == 2:
 				to_be_extracted.append(self._db.get_video(video_id))
 				audio_hrefs.remove(video_id)
 			else:
 				os.remove(f)
-		
 		self._downloaded_videos = iter(to_be_extracted)
 		if len(audio_hrefs) == 0:
 			self._finish_download = True
@@ -289,24 +295,32 @@ class SubCutter():
 		self._download_info(hrefs, self._store_subtitle)
 
 	def run_create_deck(self, hrefs):
+		if self.done_flag is True:
+			return
+		self.done_flag = True
 		self._download_info(hrefs)
 		self._process()
 
 	def run(self, notes):
 		# self._clean_downloads()
+		if self.done_flag is True:
+			return
+		self.done_flag = True
 		self._search_thread = SearchThread(self._db, notes)
 		self._search_thread.matchings.connect(self._process)
 		self._search_thread.start()
-		if len(notes) > 1:
-			self._dl_status.setText("Searching videos for %d cards..." % len(notes))
-		else:
-			self._dl_status.setText("Searching videos for 1 card...")
+		self._dl_status.setText("Searching videos for %d " % len(notes)
+			+ ("cards..." if len(notes) > 1 else "card..."))
 
 	def close(self):
 		# Exit all threads
 		if self._search_thread is not None:
 			self._search_thread.terminate()
+			self._search_thread = None
 		if self._dl_thread is not None:
 			self._dl_thread.terminate()
+			self._dl_thread = None
 		if self._ext_thread is not None:
 			self._ext_thread.terminate()
+			self._ext_thread = None
+		self.done_flag = False

@@ -1,4 +1,3 @@
-from distutils.log import error
 import os
 from aqt.utils import tooltip
 

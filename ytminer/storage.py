@@ -257,7 +257,8 @@ class Storage:
             db.row_factory = dict_factory
             cursor = db.cursor()
             cursor.execute("""
-                SELECT * FROM sequences WHERE line LIKE ? LIMIT ? OFFSET ?""", ('%' + query + '%', limit, (page - 1) * limit))
+                SELECT * FROM sequences WHERE id LIKE ?
+                OR line LIKE ? LIMIT ? OFFSET ?""", ('%' + query + '%', '%' + query + '%', limit, (page - 1) * limit))
             return cursor.fetchall()
 
     def get_settings(self):

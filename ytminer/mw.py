@@ -1,7 +1,3 @@
-from distutils.log import error
-import unicodedata
-import datetime
-
 from .gui import MineWindow
 
 from .subcutter import SubCutter
@@ -45,9 +41,25 @@ class MW(MineWindow):
 		self.next_page_2.clicked.connect(self._next_sub_page)
 		self.video_search_button.clicked.connect(self._load_videos)
 		self.sub_search_button.clicked.connect(self._load_subs)
+		self.video_search.returnPressed.connect(self._load_videos)
+		self.sub_search.returnPressed.connect(self._load_subs)
 		# Setup Search Tab
 		self._load_tables()
 		# self._setup_saved_deck()
+
+	def _get_sub_cutter(self, **kwargs):
+		if self.sub_cutter is None:
+			self.sub_cutter = SubCutter(browser=self.browser,
+                      db = self.db,
+                      dl_bar = self.download_bar, 
+                      ext_bar = self.extract_bar,
+                      add_bar = self.add_bar,
+                      dl_status=self.download_status,
+                      ext_status=self.extract_status,
+                      add_status=self.add_status,
+                      **kwargs)
+		else:
+			self.sub_cutter.update_options(**kwargs)
 
 	def get_expressions(self):
 		nids = self.browser.selectedNotes()
@@ -193,16 +205,86 @@ class MW(MineWindow):
 		self._load_videos()
 		self._load_subs()
 
+	# def _setup_saved_deck(self):
+	# 	# Find the ~::SavedVideos deck, if not found, create it
+	# 	deck_name = "~::SavedVideos"
+	# 	self.saved_deck = self.col.decks.id(deck_name)
+	# 	if self.saved_deck == None:
+	# 		self.saved_deck = self.col.decks.new(deck_name)
+	# 		self.saved_deck['desc'] = "All of your saved videos"
+	# 		self.col.decks.save(self.saved_deck)
+	# 		self.col.decks.update_parents(self.saved_deck)
+	# 		self.col.decks.flush()
+	# 	# Find the notetype for the SavedVideos deck, if not found, create it
+	# 	self.saved_deck_type = self.col.models.byName("SavedVideos")
+	# 	if self.saved_deck_type == None:
+	# 		self.saved_deck_type = self.col.models.new("SavedVideos")
+	# 		self.saved_deck_type['flds'] = [
+	# 			{'name': 'id', 'ord': 0, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 0, 'did': self.saved_deck},
+	# 			{'name': 'title', 'ord': 1, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 1, 'did': self.saved_deck},
+	# 			{'name': 'language', 'ord': 2, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 2, 'did': self.saved_deck},
+	# 			{'name': 'date', 'ord': 3, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 3, 'did': self.saved_deck},
+	# 		]
+	# 		self.saved_deck_type['tmpls'].append({
+	# 			"name": "SavedVideos",
+	# 			"qfmt": "{{id}}",
+	# 			"afmt": "{{FrontSide}}<hr id=answer>{{title}}",
+	# 			"did": self.saved_deck,
+	# 		})
+	# 		self.col.models.add(self.saved_deck_type)
+	# 	self.saved_deck_type['did'] = self.saved_deck
+	# 	self.col.models.save(self.saved_deck_type)
+	# 	self.col.models.setCurrent(self.saved_deck_type)
+	# 	self.col.models.flush()
+	# 	saved_videos = self.db.get_videos()
+	# 	# Get the list of notes in the SavedVideos deck
+	# 	saved_note_ids = self.col.findNotes("deck:%s" % deck_name)
+	# 	saved_notes = []
+	# 	for n in saved_note_ids:
+	# 		saved_notes.append(self.col.getNote(n))
+	# 	# Compare the two lists and add any new videos to the SavedVideos deck
+	# 	to_be_downloaded = []
+	# 	for note in saved_notes:
+	# 		if note['id'] not in [x['id'] for x in saved_videos]:
+	# 			video = {
+	# 				'url': 
+	# 				unicodedata.normalize('NFKD', note['id']), 
+	# 				'lang':
+	# 				unicodedata.normalize('NFKD', note['language']),}
+	# 			to_be_downloaded.append(video)
+	# 	for video in saved_videos:
+	# 		if video['id'] not in [y['id'] for y in saved_notes]:
+	# 			saved_note = self.col.newNote(False)
+	# 			saved_note['id'] = video['id']
+	# 			saved_note['title'] = video['title']
+	# 			saved_note['language'] = video['lang']
+	# 			saved_note['date'] = video['date']
+	# 			saved_note.model()['did'] = self.saved_deck
+	# 			self.col.addNote(saved_note)
+	# 			self.col.save()
+	# 	if len(to_be_downloaded) > 0:
+	# 		error_message("Updating db: %s" % to_be_downloaded)
+	# 	self.sub_cutter = SubCutter(browser=self.browser,
+	# 										db = self.db,
+	# 										dl_bar=self.download_bar,
+	# 										ext_bar=self.extract_bar,
+	# 										add_bar=self.add_bar,
+	# 										dl_status=self.download_status,
+	# 										ext_status=self.extract_status,
+	# 										add_status=self.add_status)
+	# 	self.sub_cutter._download_info(to_be_downloaded)
+	
 	def extract(self):
-		if self.sub_cutter is None:
-			self.sub_cutter = SubCutter(browser=self.browser,
-												db = self.db,
-												dl_bar = self.download_bar, 
-												ext_bar = self.extract_bar,
-												add_bar = self.add_bar,
-												dl_status=self.download_status,
-												ext_status=self.extract_status,
-												add_status=self.add_status)
+		self._get_sub_cutter()
+		# if self.sub_cutter is None:
+		# 	self.sub_cutter = SubCutter(browser=self.browser,
+		# 										db = self.db,
+		# 										dl_bar = self.download_bar, 
+		# 										ext_bar = self.extract_bar,
+		# 										add_bar = self.add_bar,
+		# 										dl_status=self.download_status,
+		# 										ext_status=self.extract_status,
+		# 										add_status=self.add_status)
 		notes = self.get_expressions()
 		if len(notes) == 0:
 			self.download_status.setText("No new cards needs to be added")
@@ -219,15 +301,16 @@ class MW(MineWindow):
 		if not link.startswith("https://www.youtube.com/"):
 			error_message("Invalid youtube link.")
 			return
-		self.sub_cutter = SubCutter(browser=self.browser,
-											db = self.db, 
-											lang = sub_lang, 
-											dl_bar = self.download_bar, 
-											ext_bar = self.extract_bar,
-											add_bar = self.add_bar,
-											dl_status=self.download_status,
-											ext_status=self.extract_status,
-											add_status=self.add_status)
+		# self.sub_cutter = SubCutter(browser=self.browser,
+		# 									db = self.db, 
+		# 									lang = sub_lang, 
+		# 									dl_bar = self.download_bar, 
+		# 									ext_bar = self.extract_bar,
+		# 									add_bar = self.add_bar,
+		# 									dl_status=self.download_status,
+		# 									ext_status=self.extract_status,
+		# 									add_status=self.add_status)
+		self._get_sub_cutter(lang = sub_lang)
 		self.sub_cutter.run_store([link])
 
 	def create_deck(self):
