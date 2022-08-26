@@ -1961,7 +1961,10 @@ def write_string(s, out=None, encoding=None):
         enc = encoding or getattr(out, 'encoding', None) or preferredencoding()
 
     buffer.write(s.encode(enc, 'ignore') if enc else s)
-    out.flush()
+    try:
+      out.flush()
+    except AttributeError:
+      pass
 
 
 def bytes_to_intlist(bs):

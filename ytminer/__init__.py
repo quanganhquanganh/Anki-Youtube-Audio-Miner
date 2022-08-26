@@ -15,19 +15,19 @@ from .mw import MW
 from .paths import dl_dir, audio_dir
 
 def onBatchEdit(browser):
-	if not os.path.exists(dl_dir):
-		os.makedirs(dl_dir)
-	if not os.path.exists(audio_dir):
-		os.makedirs(audio_dir)
-	browser.ymw_widget = MW(browser)
-	browser.ymw_widget.show()
+  if not os.path.exists(dl_dir):
+    os.makedirs(dl_dir)
+  if not os.path.exists(audio_dir):
+    os.makedirs(audio_dir)
+  browser.ymw_widget = MW(browser)
+  browser.ymw_widget.show()
 
 def setupMenu(browser):
-	menu = browser.form.menuEdit
-	menu.addSeparator()
-	a = menu.addAction('Mine audio...')
-	a.setShortcut(QKeySequence('Ctrl+Alt+M'))
-	a.triggered.connect(lambda _, b=browser: onBatchEdit(b))
+  menu = browser.form.menuEdit
+  menu.addSeparator()
+  a = menu.addAction('Mine audio...')
+  a.setShortcut(QKeySequence('Ctrl+Alt+M'))
+  a.triggered.connect(lambda _, b=browser: onBatchEdit(b))
 
 def addToBrowser():
-	addHook("browser.setupMenus", setupMenu)
+  addHook("browser.setupMenus", setupMenu)
