@@ -27,6 +27,8 @@ class MW(MineWindow):
     self._set_fields()
     self.store_button.clicked.connect(self.store_video)
     self.delete_button.clicked.connect(self.delete_videos)
+    self.sub_delete_button.clicked.connect(self.delete_subs)
+    self.sub_edit_button.clicked.connect(self.edit_subs)
     self.add_button.clicked.connect(self.extract)
     # self.create_deck_button.clicked.connect(self.add_audio)
     self.download_bar.setValue(0)
@@ -327,6 +329,24 @@ class MW(MineWindow):
     video_ids = [self.video_table.item(row.row(), 0).text() for row in rows]
     self.db.delete_videos_by_ids(video_ids)
     self._load_videos(page=self._video_page)
+
+  def delete_subs(self):
+    rows = self.sub_table.selectionModel().selectedRows()
+    if len(rows) == 0:
+      error_message("No subs selected.")
+      return
+    sub_ids = [self.sub_table.item(row.row(), 0).text() for row in rows]
+    self.db.delete_subs_by_ids(sub_ids)
+    self._load_subs(page=self._sub_page)
+
+  def edit_subs(self):
+    for row in range(self.sub_table.rowCount()):
+      sub_id = self.sub_table.item(row, 0).text()
+      sub_text = self.sub_table.item(row, 1).text()
+      if sub_text == "":
+        continue
+      self.db.update_sub(sub_id, sub_text)
+    self._load_subs(page=self._sub_page)
 
   def create_deck(self):
     return

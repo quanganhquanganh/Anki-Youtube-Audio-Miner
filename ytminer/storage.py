@@ -345,6 +345,23 @@ class Storage:
               DELETE FROM videos WHERE id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
           db.commit()
 
+  def delete_subs_by_ids(self, subs_ids):
+      with sqlite3.connect(self.db_name) as db:
+          db.row_factory = dict_factory
+          cursor = db.cursor()
+          #Delete all files associated with the video
+          cursor.execute("""
+              DELETE FROM sequences WHERE id IN ({0})""".format(','.join(['?' for _ in subs_ids])), subs_ids)
+          db.commit()
+
+  def update_sub(self, id, sub):
+    with sqlite3.connect(self.db_name) as db:
+      db.row_factory = dict_factory
+      cursor = db.cursor()
+      cursor.execute("""
+        UPDATE sequences SET line = ? WHERE id = ?""", (sub, id))
+      db.commit()
+
   def path_update_video(self, video_id, path):
     with sqlite3.connect(self.db_name) as db:
       db.row_factory = dict_factory

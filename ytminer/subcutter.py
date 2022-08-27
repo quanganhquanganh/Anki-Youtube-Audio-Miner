@@ -12,7 +12,6 @@ import time
 from aqt import mw
 from aqt.qt import *
 from aqt.utils import tooltip, getFile
-from ytminer.yt_dlp.postprocessor import ffmpeg
 
 from .gui import initializeQtResources
 
