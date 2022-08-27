@@ -145,7 +145,7 @@ class Storage:
       db.row_factory = dict_factory
       cursor = db.cursor()
       cursor.execute("""
-        SELECT * FROM videos WHERE title LIKE ? LIMIT ? OFFSET ?""", ('%' + query + '%', limit, (page - 1) * limit))
+        SELECT * FROM videos WHERE id = ? OR title LIKE ? LIMIT ? OFFSET ?""", (query, '%' + query + '%', limit, (page - 1) * limit))
       return cursor.fetchall()
 
   def get_video(self, video_id):
@@ -329,6 +329,21 @@ class Storage:
       cursor.execute("""
         DELETE FROM videos WHERE id = ?""", (video_id,))
       db.commit()
+      
+  def delete_videos_by_ids(self, video_ids):
+      with sqlite3.connect(self.db_name) as db:
+          db.row_factory = dict_factory
+          cursor = db.cursor()
+          #Delete all files associated with the video
+          cursor.execute("""
+              DELETE FROM files WHERE sequence_id IN (SELECT id FROM sequences WHERE video_id IN ({0}))""".format(','.join(['?' for _ in video_ids])), video_ids)
+          #Delete all the sequences associated with the video
+          cursor.execute("""
+              DELETE FROM sequences WHERE video_id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
+          #Delete the video
+          cursor.execute("""
+              DELETE FROM videos WHERE id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
+          db.commit()
 
   def path_update_video(self, video_id, path):
     with sqlite3.connect(self.db_name) as db:

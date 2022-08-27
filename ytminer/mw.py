@@ -2,7 +2,8 @@ from .gui import MineWindow
 
 from .subcutter import SubCutter
 from .storage import Storage
-from .paths import storage_path
+from .get_ffmpeg import get_ffmpeg_latest_url
+from .paths import storage_path, downloaded_ffmpeg
 from .messages import error_message
 from .constants import LANGUAGES, lang_list
 
@@ -25,6 +26,7 @@ class MW(MineWindow):
     self.col = self.browser.mw.col
     self._set_fields()
     self.store_button.clicked.connect(self.store_video)
+    self.delete_button.clicked.connect(self.delete_videos)
     self.add_button.clicked.connect(self.extract)
     # self.create_deck_button.clicked.connect(self.add_audio)
     self.download_bar.setValue(0)
@@ -33,19 +35,20 @@ class MW(MineWindow):
     self._get_options()
     self.language_box.currentTextChanged.connect(self._save_options)
     self.save_button.clicked.connect(self._save_options)
-    self._video_page = 1
-    self._sub_page = 1
+    self._video_page : int = 1
+    self._sub_page : int = 1
     self.prev_page.clicked.connect(self._prev_vid_page)
     self.next_page.clicked.connect(self._next_vid_page)
     self.prev_page_2.clicked.connect(self._prev_sub_page)
     self.next_page_2.clicked.connect(self._next_sub_page)
-    self.video_search_button.clicked.connect(self._load_videos)
-    self.sub_search_button.clicked.connect(self._load_subs)
+    self.video_search_button.clicked.connect(lambda: self._load_videos())
+    self.sub_search_button.clicked.connect(lambda: self._load_subs())
     self.video_search.returnPressed.connect(self._load_videos)
     self.sub_search.returnPressed.connect(self._load_subs)
     # Setup Search Tab
     self._load_tables()
-    # self._setup_saved_deck()
+    # Detect if there's ffmpeg installed in the terminal
+    self._check_ffmpeg()
 
   def _get_sub_cutter(self, **kwargs):
     if self.sub_cutter is None:
@@ -60,6 +63,24 @@ class MW(MineWindow):
                       **kwargs)
     else:
       self.sub_cutter.update_options(**kwargs)
+
+  def _check_ffmpeg(self):
+    from subprocess import check_output
+    import os
+    try:
+      check_output(["ffmpeg", "-version"])
+      self.ffmpeg = "ffmpeg"
+    except:
+      if os.path.exists(downloaded_ffmpeg):
+        self.ffmpeg = downloaded_ffmpeg
+      else:
+        self._download_ffmpeg()
+    self._get_sub_cutter(ffmpeg=self.ffmpeg)
+
+  def _download_ffmpeg(self):
+    self._get_sub_cutter()
+    self.sub_cutter.download_ffmpeg()
+    self.ffmpeg = downloaded_ffmpeg
 
   def get_notes(self):
     nids = self.browser.selectedNotes()
@@ -144,39 +165,35 @@ class MW(MineWindow):
     return fields
 
   def _prev_vid_page(self):
-    self._video_page -= 1 if self._video_page > 1 else 0
-    self.page_label.setText("Page: {}".format(self._video_page))
-    return self._load_videos(page=self._video_page, clear_if_none=False)
+    if self._video_page > 1:
+      self._video_page -= 1
+      self.page_label.setText("Page: {}".format(self._video_page))
+      return self._load_videos(page=self._video_page, clear_if_none=False)
 
   def _next_vid_page(self):
-    self._video_page += 1
-    self.page_label.setText("Page: {}".format(self._video_page))
-    return self._load_videos(page=self._video_page, clear_if_none=False)
+    return self._load_videos(page=self._video_page + 1, clear_if_none=False)
 
   def _prev_sub_page(self):
-    self._sub_page -= 1 if self._sub_page > 1 else 0
-    self.page_label_2.setText("Page: {}".format(self._sub_page))
-    return self._load_subs(page=self._sub_page, clear_if_none=False)
+    if self._sub_page > 1:
+      self._sub_page -= 1
+      self.page_label_2.setText("Page: {}".format(self._sub_page))
+      return self._load_subs(page=self._sub_page, clear_if_none=False)
 
   def _next_sub_page(self):
-    self._sub_page += 1
-    self.page_label_2.setText("Page: {}".format(self._sub_page))
-    return self._load_subs(page=self._sub_page, clear_if_none=False)
+    return self._load_subs(page=self._sub_page + 1, clear_if_none=False)
 
   def _load_videos(self, page=1, limit=10, clear_if_none=True):
     video_query = self.video_search.text()
-    self._video_page = page
     videos = self.db.get_matched_videos_page(video_query, page, limit)
 
     if len(videos) == 0:
-      self._video_page -= 1 if self._video_page > 1 else 0
-      self.page_label.setText("Page: {}".format(self._video_page))
       self.next_page.setEnabled(False)
       if not clear_if_none:
         return
     else:
-      self.page_label.setText("Page: {}".format(self._video_page))
+      self._video_page = page
       self.next_page.setEnabled(True)
+    self.page_label.setText("Page: {}".format(self._video_page))
 
     if self.video_table.rowCount() > 0:
       self.video_table.clearContents()
@@ -188,25 +205,23 @@ class MW(MineWindow):
 
   def _load_subs(self, page=1, limit=10, clear_if_none=True):
     sub_query = self.sub_search.text()
-    self._sub_page = page
     subs = self.db.get_matched_sequences_page(sub_query, page, limit)
     
     if len(subs) == 0:
-      self._sub_page -= 1 if self._sub_page > 1 else 0
-      self.page_label_2.setText("Page: {}".format(self._sub_page))
       self.next_page_2.setEnabled(False)
       if not clear_if_none:
         return
     else:
-      self.page_label_2.setText("Page: {}".format(self._sub_page))
+      self._sub_page = page
       self.next_page_2.setEnabled(True)
+    self.page_label_2.setText("Page: {}".format(self._sub_page))
 
     if self.sub_table.rowCount() > 0:
       self.sub_table.clearContents()
     self.sub_table.setRowCount(len(subs))
     for idx, sub in enumerate(subs):
-      data = [sub['id'], sub['line'], sub['start_time'], sub['end_time'], 
-        "youtube.com/watch?v={}&t={}".format(sub['video_id'], int(float(sub['start_time'])))]
+      data = [sub['id'], sub['line'], sub['start_time'], sub['end_time'],
+      "https://youtube.com/watch?v={}&t={}".format(sub['video_id'], int(float(sub['start_time'])))]
       self._add_to_table(self.sub_table, idx, data)
     self.sub_table.resizeColumnsToContents()
 
@@ -303,6 +318,15 @@ class MW(MineWindow):
       return
     self._get_sub_cutter(lang = sub_lang)
     self.sub_cutter.run_store([link])
+
+  def delete_videos(self):
+    rows = self.video_table.selectionModel().selectedRows()
+    if len(rows) == 0:
+      error_message("No videos selected.")
+      return
+    video_ids = [self.video_table.item(row.row(), 0).text() for row in rows]
+    self.db.delete_videos_by_ids(video_ids)
+    self._load_videos(page=self._video_page)
 
   def create_deck(self):
     return

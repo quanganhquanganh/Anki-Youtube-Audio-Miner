@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'widgetidiot.ui'
-#
 # Created by: PyQt5 UI code generator 5.15.4
 #
 # WARNING: Any manual changes made to this file will be lost when pyuic5 is
@@ -9,104 +7,7 @@
 
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-
-# class MineWindow(QtWidgets.QWidget):
-#     def __init__(self):
-#         super().__init__()
-#         self.setObjectName("self")
-#         self.resize(551, 433)
-#         self.progress_group = QtWidgets.QGroupBox(self)
-#         self.progress_group.setObjectName(u"progress_group")
-#         self.progress_group.setGeometry(QtCore.QRect(20, 180, 511, 191))
-#         self.download_bar = QtWidgets.QProgressBar(self.progress_group)
-#         self.download_bar.setObjectName(u"download_bar")
-#         self.download_bar.setGeometry(QtCore.QRect(130, 30, 371, 23))
-#         self.download_bar.setValue(24)
-#         self.extract_bar = QtWidgets.QProgressBar(self.progress_group)
-#         self.extract_bar.setObjectName(u"extract_bar")
-#         self.extract_bar.setGeometry(QtCore.QRect(130, 80, 371, 23))
-#         self.extract_bar.setValue(24)
-#         self.add_bar = QtWidgets.QProgressBar(self.progress_group)
-#         self.add_bar.setObjectName(u"add_bar")
-#         self.add_bar.setGeometry(QtCore.QRect(130, 130, 371, 23))
-#         self.add_bar.setValue(24)
-#         self.download_label = QtWidgets.QLabel(self.progress_group)
-#         self.download_label.setObjectName(u"download_label")
-#         self.download_label.setGeometry(QtCore.QRect(20, 30, 71, 23))
-#         self.extract_label = QtWidgets.QLabel(self.progress_group)
-#         self.extract_label.setObjectName(u"extract_label")
-#         self.extract_label.setGeometry(QtCore.QRect(20, 80, 55, 23))
-#         self.add_label = QtWidgets.QLabel(self.progress_group)
-#         self.add_label.setObjectName(u"add_label")
-#         self.add_label.setGeometry(QtCore.QRect(20, 130, 71, 23))
-#         self.download_status = QtWidgets.QLabel(self.progress_group)
-#         self.download_status.setObjectName(u"download_status")
-#         self.download_status.setGeometry(QtCore.QRect(20, 60, 241, 16))
-#         self.extract_status = QtWidgets.QLabel(self.progress_group)
-#         self.extract_status.setObjectName(u"extract_status")
-#         self.extract_status.setGeometry(QtCore.QRect(20, 110, 241, 16))
-#         self.add_status = QtWidgets.QLabel(self.progress_group)
-#         self.add_status.setObjectName(u"add_status")
-#         self.add_status.setGeometry(QtCore.QRect(20, 160, 241, 16))
-#         self.input_group = QtWidgets.QGroupBox(self)
-#         self.input_group.setObjectName(u"input_group")
-#         self.input_group.setGeometry(QtCore.QRect(20, 30, 511, 121))
-#         self.link_box = QtWidgets.QLineEdit(self.input_group)
-#         self.link_box.setObjectName(u"link_box")
-#         self.link_box.setGeometry(QtCore.QRect(130, 20, 371, 22))
-#         self.link_label = QtWidgets.QLabel(self.input_group)
-#         self.link_label.setObjectName(u"link_label")
-#         self.link_label.setGeometry(QtCore.QRect(20, 20, 91, 20))
-#         self.lang_label = QtWidgets.QLabel(self.input_group)
-#         self.lang_label.setObjectName(u"lang_label")
-#         self.lang_label.setGeometry(QtCore.QRect(20, 70, 71, 16))
-#         self.language_box = QtWidgets.QComboBox(self.input_group)
-#         self.language_box.setObjectName(u"language_box")
-#         self.language_box.setGeometry(QtCore.QRect(90, 70, 73, 22))
-#         self.store_button = QtWidgets.QPushButton(self.input_group)
-#         self.store_button.setObjectName(u"store_button")
-#         self.store_button.setGeometry(QtCore.QRect(180, 70, 91, 28))
-#         self.open_storage_button = QtWidgets.QPushButton(self.input_group)
-#         self.open_storage_button.setObjectName(u"open_storage_button")
-#         self.open_storage_button.setGeometry(QtCore.QRect(390, 70, 111, 28))
-#         self.set_fields_button = QtWidgets.QPushButton(self.input_group)
-#         self.set_fields_button.setObjectName(u"set_fields_button")
-#         self.set_fields_button.setGeometry(QtCore.QRect(290, 70, 93, 28))
-#         self.groupBox = QtWidgets.QGroupBox(self)
-#         self.groupBox.setObjectName(u"groupBox")
-#         self.groupBox.setGeometry(QtCore.QRect(340, 380, 191, 51))
-#         self.add_button = QtWidgets.QPushButton(self.groupBox)
-#         self.add_button.setObjectName(u"add_button")
-#         self.add_button.setGeometry(QtCore.QRect(10, 10, 51, 28))
-#         self.create_deck_button = QtWidgets.QPushButton(self.groupBox)
-#         self.create_deck_button.setObjectName(u"create_deck_button")
-#         self.create_deck_button.setGeometry(QtCore.QRect(70, 10, 111, 28))
-
-#         self.retranslateUi()
-
-#         QtCore.QMetaObject.connectSlotsByName(self)
-#     # setupUi
-
-#     def retranslateUi(self):
-#         _translate = QtCore.QCoreApplication.translate
-#         self.setWindowTitle(_translate("self", u"Mine audio"))
-#         self.progress_group.setTitle(_translate("self", u"Progress tracker:"))
-#         self.download_label.setText(_translate("self", u"Download:"))
-#         self.extract_label.setText(_translate("self", u"Extract:"))
-#         self.add_label.setText(_translate("self", u"Add audio:"))
-#         self.download_status.setText("")
-#         self.extract_status.setText("")
-#         self.add_status.setText("")
-#         self.input_group.setTitle(_translate("self", u"Input settings:"))
-#         self.link_label.setText(_translate("self", u"Download link:"))
-#         self.lang_label.setText(_translate("self", u"Language:"))
-#         self.store_button.setText(_translate("self", u"Store video"))
-#         self.open_storage_button.setText(_translate("self", u"Open stored"))
-#         self.set_fields_button.setText(_translate("self", u"Set fields"))
-#         self.groupBox.setTitle("")
-#         self.add_button.setText(_translate("self", u"Add"))
-#         self.create_deck_button.setText(_translate("self", u"Create deck"))
-#     # retranslateUi
+from ytminer.messages import error_message
 
 class MineWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -253,6 +154,7 @@ class MineWindow(QtWidgets.QWidget):
         self.video_table.setHorizontalHeaderItem(3, __qtablewidgetitem3)
         self.video_table.setObjectName(u"video_table")
         self.video_table.setGeometry(QtCore.QRect(0, 44, 561, 231))
+        self.video_table.itemDoubleClicked.connect(self.open_link)
         self.video_search = QtWidgets.QLineEdit(self.video_tab)
         self.video_search.setObjectName(u"video_search")
         self.video_search.setGeometry(QtCore.QRect(0, 4, 301, 31))
@@ -276,6 +178,7 @@ class MineWindow(QtWidgets.QWidget):
         self.sub_table.setHorizontalHeaderItem(4, __qtablewidgetitem8)
         self.sub_table.setObjectName(u"sub_table")
         self.sub_table.setGeometry(QtCore.QRect(0, 44, 561, 231))
+        self.sub_table.itemDoubleClicked.connect(self.open_link)
         self.next_page_2 = QtWidgets.QPushButton(self.sub_tab)
         self.next_page_2.setObjectName(u"next_page_2")
         self.next_page_2.setGeometry(QtCore.QRect(520, 284, 41, 28))
@@ -358,9 +261,19 @@ class MineWindow(QtWidgets.QWidget):
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.search_tab), _translate("self", u"Search"))
     # retranslateUi
 
+    def open_link(self, item):
+        import webbrowser
+        if item.text().startswith("http"):
+            webbrowser.open(item.text())
+
     def _add_to_table(self, table, row, data):
         for i in range(len(data)):
-            item = QtWidgets.QTableWidgetItem()
-            item.setText(data[i])
-            table.setItem(row, i, item)
+          item = QtWidgets.QTableWidgetItem()
+          item.setText(data[i])
+          if data[i].startswith("http"):
+            item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+            item.setForeground(QtGui.QBrush(QtGui.QColor(0, 0, 255)))
+            item.setFont(QtGui.QFont("", 8))
+            item.setToolTip("Double click to open link")
+          table.setItem(row, i, item)
         # raise Exception(table.rowCount())

@@ -19,32 +19,26 @@ def get_ffmpeg_latest_url(plat):
   if r.status_code != 200:
     raise Exception('Failed to get latest ffmpeg release: ' + r.text)
   data = r.json()
-  print(data)
   for asset in data['assets']:
     if asset['name'].startswith('ffmpeg-master-latest-{0}-gpl.'.format(plat)):
       return asset['browser_download_url']
-# plat = 'Linux'
-# url = get_ffmpeg_latest_url(plat)
-# print(url)
-# zip_name = url.split('/')[-1]
-# print("Downloading ffmpeg...")
-# r = requests.get(url, stream=True)
-# with open(zip_name, 'wb') as f:
-#   shutil.copyfileobj(r.raw, f)
-# print("Extracting ffmpeg...")
-# if zip_name.endswith('.zip'):
-#   with zipfile.ZipFile(zip_name, 'r') as zip_ref:
-#     zip_ref.extractall('ffmpeg-extracted')
-# elif zip_name.endswith('.tar.xz'):
-#   with tarfile.open(zip_name) as tar:
-#     tar.extractall('ffmpeg-extracted')
-# os.remove(zip_name)
-# print("Done.")
-# print("Installing ffmpeg...")
-# if plat == 'Windows':
-#   shutil.copyfile('ffmpeg-extracted/{0}/bin/ffmpeg.exe'.format(zip_name.split('.')[0]), 'ffmpeg.exe')
-#   shutil.copyfile('ffmpeg-extracted/{0}/bin/ffprobe.exe'.format(zip_name.split('.')[0]), 'ffprobe.exe')
-# else:
-#   shutil.copyfile('ffmpeg-extracted/{0}/bin/ffmpeg'.format(zip_name.split('.')[0]), 'ffmpeg')
-#   shutil.copyfile('ffmpeg-extracted/{0}/bin/ffprobe'.format(zip_name.split('.')[0]), 'ffprobe')
-# shutil.rmtree('ffmpeg-extracted')
+
+def extract_ffmpeg_zip(plat, zip_src, dest):
+  ffmpeg_extract_dir = os.path.join(dest, 'ffmpeg-extract')
+  if zip_src.endswith('.zip'):
+    with zipfile.ZipFile(zip_src, 'r') as zip_ref:
+      zip_ref.extractall(ffmpeg_extract_dir)
+  elif zip_src.endswith('.tar.xz'):
+    with tarfile.open(zip_src) as tar:
+      tar.extractall(ffmpeg_extract_dir)
+  os.remove(zip_src)
+  # If plat is Windows, move ffmpeg.exe to the root of the extracted directory.
+  zip_name = os.path.basename(zip_src).split('.')[0]
+  bin_dir = os.path.join(dest, 'ffmpeg-extract', zip_name, 'bin')
+  if plat == 'Windows':
+    shutil.copyfile(os.path.join(bin_dir, 'ffmpeg.exe'), os.path.join(dest, 'ffmpeg.exe'))
+    shutil.copyfile(os.path.join(bin_dir, 'ffprobe.exe'), os.path.join(dest, 'ffprobe.exe'))
+  else:
+    shutil.copyfile(os.path.join(bin_dir, 'ffmpeg'), os.path.join(dest, 'ffmpeg'))
+    shutil.copyfile(os.path.join(bin_dir, 'ffprobe'), os.path.join(dest, 'ffprobe'))
+  shutil.rmtree(ffmpeg_extract_dir)

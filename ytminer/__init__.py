@@ -1,4 +1,4 @@
-import os
+import os, sys
 
 from aqt.qt import *
 from anki.hooks import addHook
@@ -14,7 +14,7 @@ unicode = str if not ANKI20 else unicode
 from .mw import MW
 from .paths import dl_dir, audio_dir
 
-def onBatchEdit(browser):
+def setupEnv(browser):
   if not os.path.exists(dl_dir):
     os.makedirs(dl_dir)
   if not os.path.exists(audio_dir):
@@ -27,7 +27,7 @@ def setupMenu(browser):
   menu.addSeparator()
   a = menu.addAction('Mine audio...')
   a.setShortcut(QKeySequence('Ctrl+Alt+M'))
-  a.triggered.connect(lambda _, b=browser: onBatchEdit(b))
+  a.triggered.connect(lambda _, b=browser: setupEnv(b))
 
 def addToBrowser():
   addHook("browser.setupMenus", setupMenu)

@@ -12,12 +12,14 @@ import time
 from aqt import mw
 from aqt.qt import *
 from aqt.utils import tooltip, getFile
+from ytminer.yt_dlp.postprocessor import ffmpeg
 
 from .gui import initializeQtResources
 
 from .threads import SearchThread, DownloadThread, AddThread, ProcessThread
-from .paths import dl_dir, audio_dir
+from .paths import dl_dir, audio_dir, user_files_dir
 from .messages import error_message #, info_message
+from .get_ffmpeg import get_ffmpeg_latest_url, extract_ffmpeg_zip
 
 sys.stderr.isatty = lambda : True
 
@@ -30,6 +32,7 @@ class SubCutter():
         lang: str = "en",
         audio_format = 'mp3',
         image_format = 'jpg',
+        ffmpeg = 'ffmpeg',
         dl_bar = None,
         ext_bar = None,
         add_bar = None,
@@ -50,7 +53,7 @@ class SubCutter():
     self._dl_status = dl_status
     self._proc_status = ext_status
     self._add_status = add_status
-    self._ffmpeg = "ffmpeg"
+    self.ffmpeg = ffmpeg
 
     #Threads related
     self._dl_thread = None
@@ -60,59 +63,48 @@ class SubCutter():
     self._matchings = None
     self._downloaded_videos = None
     self._finish_download = False
-    self.done_flag = False
+    self.running = False
 
   def update_options(self, **kwargs):
     for key, value in kwargs.items():
       setattr(self, key, value)
 
-  def _create_dl_thread(self, hrefs, type, finish_callback = None):
+  def _create_dl_thread(self,
+      hrefs,
+      info_callback = None,
+      finish_callback = None):
+    self._dl_bar.setValue(0)
     dl_thread = DownloadThread(hrefs = hrefs,
-                                  lang = self.lang, 
-                                  download_path = self.download_path,
-                                  type = type)
-    dl_thread.done_info.connect(self._add_downloaded)
+      lang = self.lang, 
+      download_path = self.download_path)
+    dl_thread.done_info.connect(info_callback)
     dl_thread.percent.connect(self._dl_bar.setValue)
     dl_thread.amount.connect(self._dl_status.setText)
     dl_thread.done.connect(finish_callback)
-    # self._dl_thread.start()
-    # Wait for the thread to start-up
-    # if self._dl_thread.isRunning():
-    #   time.sleep(0.1) # if type == "audio" else 20)
     return dl_thread
 
   def _create_proc_thread(self, video_path, sequences, finish_callback = None):
-    proc_thread = ProcessThread(video_path, 
+    proc_thread = ProcessThread(video_path,
                     extract_path=self.extract_path, 
                     sequences=sequences,
                     audio_format=self.audio_format,
+                    ffmpeg=self.ffmpeg,
                     image_format=self.image_format)
     proc_thread.done_files.connect(finish_callback)
     proc_thread.percent.connect(self._proc_bar.setValue)
-    # self._proc_thread.start()
-    # Wait for the thread to start-up
-    # if self._proc_thread.isRunning():
-    #   time.sleep(0.1)
     return proc_thread
 
-  def _download_info(self, hrefs, finished_callback = None):
-    self._dl_bar.setValue(0)
-    # if self._dl_thread is not None:
-    #   self._dl_thread.terminate()
-    self._dl_thread = DownloadThread(hrefs = hrefs,
-                                  lang = self.lang, 
-                                  download_path = self.download_path,
-                                  type = "info")
+  def _download_info(self, hrefs, info_callback = None):
     #Get vtt filename then convert it to srt
     def finish_dl_thread():
       self._finish_download = True
       self._dl_thread.terminate()
       self._dl_thread = None
       self._dl_status.setText("Finished downloading subtitles!")
-    self._dl_thread.done_info.connect(finished_callback)
-    self._dl_thread.percent.connect(self._dl_bar.setValue)
-    self._dl_thread.amount.connect(self._dl_status.setText)
-    self._dl_thread.done.connect(finish_dl_thread)
+    hrefs = [{'url': href, 'type': 'info'} for href in hrefs]
+    self._dl_thread = self._create_dl_thread(hrefs, 
+      info_callback = info_callback,
+      finish_callback = finish_dl_thread)
     self._dl_thread.start()
 
   def _store_subtitle(self, info):
@@ -134,23 +126,6 @@ class SubCutter():
       os.remove(filename)
     if srt_filepath and os.path.exists(srt_filepath):
       os.remove(srt_filepath)
-
-  # def _create_deck(self, info):
-  #   video_id = info['id']
-  #   filename = info['filename']
-  #   if not self._matchings:
-  #     self._matchings = {}
-  #   self._matchings[video_id] = {}
-
-  #   srt_filepath = None
-  #   try:
-  #     srt_filepath = self._convert_to_srt(filename)
-  #     sequences = []
-  #     for s in self._make_list(srt_filepath):
-  #       s[2] = s[2].replace("\n", "")
-  #       sequences.append(s)
-  #     for s in sequences:
-  #       self._matchings[video_id][s[0]] = s[1]
 
   def _add_downloaded(self, done_info):
       if 'id' in done_info and 'filename' in done_info:
@@ -204,6 +179,7 @@ class SubCutter():
     self._matchings = matchings
     if len(self._matchings) == 0:
       self._dl_status.setText("No match found")
+      self.running = False
       return
 
     audio_hrefs = []
@@ -233,46 +209,47 @@ class SubCutter():
       video_id = basename.split(".")[0]
       video = self._db.get_video(video_id)
 
+      if video_id not in vid_hrefs and video_id not in audio_hrefs:
+        os.remove(f)
+        continue
       # If video already existed, no need to download either it or the audio
       # If only audio found, and you need to extract images, keep the video href
       if not basename.endswith(".part") and video['type'] == 'image':
-        to_be_extracted.append(video)
         if video_id in vid_hrefs:
           vid_hrefs.remove(video_id)
+          to_be_extracted.append(video)
         if video_id in audio_hrefs:
           audio_hrefs.remove(video_id)
-      elif video_id in audio_hrefs and not basename.endswith(".part") and video['type'] == 'audio':
-        to_be_extracted.append(video)
-        audio_hrefs.remove(video_id)
-      else:
-        os.remove(f)
+          to_be_extracted.append(video)
+      elif not basename.endswith(".part") and video['type'] == 'audio':
+        if video_id in vid_hrefs:
+          os.remove(f)
+        elif video_id in audio_hrefs:
+          to_be_extracted.append(video)
+          audio_hrefs.remove(video_id)
 
     self._downloaded_videos = iter(to_be_extracted)
-    if len(audio_hrefs) == 0 and len(vid_hrefs) == 0:
+    hrefs = [{'url': href, 'type': 'image'} for href in vid_hrefs]
+    hrefs.extend([{'url': href, 'type': 'audio'} for href in audio_hrefs])
+    if len(hrefs) == 0:
       self._finish_download = True
     else:
-      self._dl_status.setText("Downloading {0} files".format(len(audio_hrefs) + len(vid_hrefs)))
+      self._dl_status.setText("Downloading {0} files".format(len(hrefs)))
 
       def finish_dl_all():
         self._finish_download = True
-      def finish_dl_video():
-        self._dl_thread = self._create_dl_thread(audio_hrefs, "audio", finish_dl_all)
-        self._dl_thread.start()
 
-      if len(vid_hrefs) > 0:
-        self._dl_thread = self._create_dl_thread(vid_hrefs, "image", finish_dl_video
-          if len(audio_hrefs) > 0 else finish_dl_all)
-      else:
-        self._dl_thread = self._create_dl_thread(audio_hrefs, "audio", finish_dl_all)
-      
+      self._dl_thread = self._create_dl_thread(hrefs,
+        self._add_downloaded,
+        finish_dl_all)
       self._dl_thread.start()
-    self._process_next()
 
+    self._process_next()
 
   def _convert_to_srt(self, filename):
     filepath = os.path.join(self.download_path, filename)
     srt_filepath = os.path.join(self.download_path, filename.replace(".vtt", ".srt"))
-    command = self._ffmpeg + ' ' + '-i' + ' ' + filepath + ' ' + srt_filepath + ' -loglevel quiet'
+    command = self.ffmpeg + ' ' + '-i' + ' ' + filepath + ' ' + srt_filepath + ' -loglevel quiet'
     use_shell = True
     try:
       output = subprocess.check_output(command.replace("\\", "/"), shell=use_shell)
@@ -340,17 +317,41 @@ class SubCutter():
     self._download_info(hrefs, self._store_subtitle)
 
   def run_create_deck(self, hrefs):
-    if self.done_flag is True:
+    if self.running is True:
       return
-    self.done_flag = True
+    self.running = True
     self._download_info(hrefs)
     self._process()
 
+  def download_ffmpeg(self):
+    if self.running is True:
+      return
+    self.running = True
+    # Get platform
+    plat = sys.platform
+    if plat == 'win64' or plat == 'win32':
+      plat = 'Windows'
+    url = get_ffmpeg_latest_url(plat)
+    url = {'url': url, 'type': 'file'}
+    self._dl_thread = DownloadThread(hrefs = [url],
+                                  download_path = user_files_dir)
+    #Get vtt filename then convert it to srt
+    def extract_ffmpeg(zip_file):
+      self._dl_status.setText("Extracting ffmpeg...")
+      extract_ffmpeg_zip(plat, zip_file['path'], user_files_dir)
+      self._dl_status.setText("Finished installing ffmpeg!")
+      self.running = False
+
+    self._dl_thread.percent.connect(self._dl_bar.setValue)
+    self._dl_thread.amount.connect(self._dl_status.setText)
+    self._dl_thread.done_info.connect(extract_ffmpeg)
+    self._dl_thread.start()
+
   def run(self, notes):
     # self._clean_downloads()
-    if self.done_flag is True:
+    if self.running is True:
       return
-    self.done_flag = True
+    self.running = True
     self._search_thread = SearchThread(self._db, notes)
     self._search_thread.matchings.connect(self._process)
     self._search_thread.start()
@@ -368,4 +369,4 @@ class SubCutter():
     if self._proc_thread is not None:
       self._proc_thread.terminate()
       self._proc_thread = None
-    self.done_flag = False
+    self.running = False

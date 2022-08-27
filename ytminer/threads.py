@@ -5,6 +5,7 @@ from PyQt5 import QtCore
 import subprocess
 
 from ytminer.messages import error_message
+# from .paths import downloaded_ffmpeg, user_files_dir
 
 from . import yt_dlp as youtube_dl
 
@@ -84,15 +85,14 @@ class DownloadThread(QtCore.QThread):
   done = QtCore.pyqtSignal()
 
   def __init__(self, 
-        hrefs: list,
-        type = 'image', 
+        hrefs: list, 
         lang = None,
         download_path = None):
     super().__init__()
     self.hrefs = hrefs
     self.lang = lang
     self.download_path = download_path
-    self.type = type
+    self._current_type = None
     self._current = 0
     self._total = 0
     self._max_try = 3
@@ -101,10 +101,10 @@ class DownloadThread(QtCore.QThread):
   def _download_hook(self, d):
     if d['status'] == 'finished':
       self.percent.emit(100)
-      filetype = self.type if self.type != 'image' else 'video'
-      self.amount.emit('Downloading {0}s: {1}/{2}{3}'.
-        format(filetype, self._current + 1, self._total,'. Inserting subtitles...'
-        if self.type == 'info' else ''))
+      if self._current_type == 'info':
+        self.amount.emit('Downloading {}/{}. Inserting subtitles...'.format(self._current + 1, self._total))
+      else:
+        self.amount.emit('Downloading {}/{}'.format(self._current + 1, self._total))
       filename = os.path.basename(d['filename'])
       url = filename.split(".")[0]
 
@@ -113,7 +113,7 @@ class DownloadThread(QtCore.QThread):
         'no_warnings': True,
       }).extract_info(url, download=False)
       _info['filename'] = d['filename']
-      _info['type'] = self.type
+      _info['type'] = self._current_type
       _info['status'] = 'finished'
 
       self.done_info.emit(_info)
@@ -130,12 +130,13 @@ class DownloadThread(QtCore.QThread):
       except:
         p = 0
       self.percent.emit(p)
-      self.amount.emit("Download {0}/{1}".format(self._current + 1, self._total))
+      self.amount.emit('Downloading {}/{}.'.format(self._current + 1, self._total))
       
-  def _download_urls(self, urls, options, extract_info = True):
+  def _download_yt_urls(self, urls, options, check_list = True):
     prev_current = self._current
     to_be_downloaded = []
-    if extract_info:
+    # Extrapolate the playlist urls if necessary
+    if check_list:
       self.amount.emit("Extracting info...")
       for href in urls:
         ydl = youtube_dl.YoutubeDL({
@@ -153,81 +154,111 @@ class DownloadThread(QtCore.QThread):
         else:
           # Just a video
           to_be_downloaded.append(info['id'])
-      self._total = len(to_be_downloaded)
+      self._total = len(to_be_downloaded) - len(urls) + self._total
     else:
       to_be_downloaded = urls
-      if self._total == 0:
-        self._total = len(to_be_downloaded)
+    if len(to_be_downloaded) == 0:
+      return
     ydl = youtube_dl.YoutubeDL(options)
     try:
       ydl.download(to_be_downloaded)
     except Exception as e:
       if self._try < self._max_try:
+        self.amount.emit("Something went wrong. Retrying...")
         self._try += 1
         to_be_downloaded = to_be_downloaded[(self._current - prev_current):]
-        return self._download_urls(to_be_downloaded, options, extract_info = False)
+        return self._download_urls(to_be_downloaded, options, check_list = False)
       else:
-        self.done.emit()
-        self.done_info.emit({'status': 'error', 'message': str(e)})
+        self.amount.emit("Can't download. Skipping...")
+        self._try = 0
+        self._current = self._current + 1
+        if self._current != self._total:
+          to_be_downloaded = to_be_downloaded[(self._current - prev_current):]
         return
 
   def _download_info(self):
     # Check if hrefs is a list of string pairs
-    if len(self.hrefs) != 0 and isinstance(self.hrefs[0], dict):
-      languages = list(set([href['lang'] for href in self.hrefs]))
-    else:
-      self.hrefs = [{'lang': 'ja', 'url': href} for href in self.hrefs]
-      languages = [self.lang]
-    for lang in languages:
-      urls = [href['url'] for href in self.hrefs if href['lang'] == lang]
-      ydl_opts = {"subtitleslangs": [lang],
-        "progress_hooks": [self._download_hook],
-        "skip_download": True, 
-        "writeautomaticsub": True, 
-        "writesubtitles": True, 
-        "subtitlesformat": 'vtt',
-        "outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
-        "quiet":True, "no_warnings":True}
-      self._download_urls(urls, ydl_opts)
+    # if len(self.hrefs) != 0 and isinstance(self.hrefs[0], dict):
+    #   languages = list(set([href['lang'] for href in self.hrefs]))
+    # else:
+    #   self.hrefs = [{'lang': 'ja', 'url': href} for href in self.hrefs]
+    #   languages = [self.lang]
+    # for lang in languages:
+    urls = [href['url'] for href in self.hrefs if href['type'] == 'info']
+    if len(urls) == 0:
+      return
+    ydl_opts = {"subtitleslangs": [self.lang],
+      "progress_hooks": [self._download_hook],
+      "skip_download": True, 
+      "writeautomaticsub": True, 
+      "writesubtitles": True, 
+      "subtitlesformat": 'vtt',
+      "outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
+      "quiet":True, "no_warnings":True}
+    self._current_type = 'info'
+    self._download_yt_urls(urls, ydl_opts)
 
   def _download_audio(self):
-    # Check if hrefs is a list of string pairs
-    if len(self.hrefs) != 0 and isinstance(self.hrefs[0], dict):
-      languages = list(set([href['lang'] for href in self.hrefs]))
-    else:
-      self.hrefs = [{'lang': 'ja', 'url': href} for href in self.hrefs]
-      languages = ['ja']
-    for lang in languages:
-      urls = [href['url'] for href in self.hrefs if href['lang'] == lang]
-      audio_opts = {'format': 'bestaudio/best',
-            'progress_hooks': [self._download_hook],
-            "outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
-            "quiet":True, "no_warnings":True}
-      self._download_urls(urls, audio_opts, extract_info = False)
+    urls = [href['url'] for href in self.hrefs if href['type'] == 'audio']
+    if len(urls) == 0:
+      return
+    audio_opts = {'format': 'bestaudio/best',
+          'progress_hooks': [self._download_hook],
+          "outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
+          "quiet":True, "no_warnings":True}
+    self._current_type = 'audio'
+    self._download_yt_urls(urls, audio_opts, check_list = False)
 
   def _download_video(self):
-    # Check if hrefs is a list of string pairs
-    if len(self.hrefs) != 0 and isinstance(self.hrefs[0], dict):
-      languages = list(set([href['lang'] for href in self.hrefs]))
-    else:
-      self.hrefs = [{'lang': 'ja', 'url': href} for href in self.hrefs]
-      languages = ['ja']
-    for lang in languages:
-      urls = [href['url'] for href in self.hrefs if href['lang'] == lang]
-      # Options for an audio-less video
-      video_opts = {'format': '22/18/13/worst',
-            'progress_hooks': [self._download_hook],
-            "outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
-            "quiet":True, "no_warnings":True}
-      self._download_urls(urls, video_opts, extract_info = False)
+    urls = [href['url'] for href in self.hrefs if href['type'] == 'image']
+    if len(urls) == 0:
+      return
+    # Options for an audio-less video
+    video_opts = {'format': '22/18/13/worst',
+          'progress_hooks': [self._download_hook],
+          "outtmpl": os.path.join(self.download_path, "%(id)s.%(ext)s"),
+          "quiet":True, "no_warnings":True}
+    self._current_type = 'image'
+    self._download_yt_urls(urls, video_opts, check_list = False)
 
+  def _download_files(self):
+    import requests
+    urls = [href['url'] for href in self.hrefs if href['type'] == 'file']
+    if len(urls) == 0:
+      return
+    for url in urls:
+      filename = os.path.basename(url)
+      self.amount.emit("Downloading {}...".format(filename))
+      try:
+        r = requests.get(url, stream=True)
+        total_length = int(r.headers.get('content-length'))
+        dl = 0
+        with open(os.path.join(self.download_path, filename), 'wb') as f:
+          for chunk in r.iter_content(chunk_size=1024): 
+            if chunk: # filter out keep-alive new chunks
+              dl += len(chunk)
+              f.write(chunk)
+              f.flush()
+              self.percent.emit(int(100 * dl / total_length))
+        self._current += 1
+        _info = {
+          'type': 'file',
+          'filename': filename,
+          'path': os.path.join(self.download_path, filename)
+        }
+        self.done_info.emit(_info)
+      except Exception as e:
+        self.amount.emit("Can't download. Skipping...")
+        self._current += 1
+        continue
+    if self._current == self._total:
+      self.done.emit()
   def run(self):
-    if self.type == 'info':
-      self._download_info()
-    elif self.type == 'audio':
-      self._download_audio()
-    elif self.type == 'image':
-      self._download_video()
+    self._total = len(self.hrefs)
+    self._download_info()
+    self._download_files()
+    self._download_video()
+    self._download_audio()
 
 class ProcessThread(QtCore.QThread):
   done_files = QtCore.pyqtSignal(list)
@@ -237,6 +268,7 @@ class ProcessThread(QtCore.QThread):
         audio_path,
         extract_path,
         sequences,
+        ffmpeg = 'ffmpeg',
         audio_format = "mp3",
         image_format = "jpeg",):
     super().__init__()
@@ -247,7 +279,7 @@ class ProcessThread(QtCore.QThread):
     self.sequences = sequences
     self.total = sum([len(seq['type']) for seq in sequences])
     self.current = 0
-    self.ffmpeg = "ffmpeg"
+    self.ffmpeg = ffmpeg
 
   def _extract_audio(self):
     command_format = self.ffmpeg + " -ss {0} -i \"{1}\" -ss 0 -c copy -t {2} -avoid_negative_ts make_zero -c:a libmp3lame \"{3}\""
@@ -298,4 +330,3 @@ class ProcessThread(QtCore.QThread):
     files.extend(self._extract_audio())
     files.extend(self._extract_screenshots())
     self.done_files.emit(files)
-    # self.done_files.emit(self._extract_audio() if self.type == 'audio' else self._extract_screenshots())
