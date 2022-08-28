@@ -239,6 +239,22 @@ class Storage:
               #   matched_videos[seq['video_id']]['video'] = True
       return matched_videos
 
+  def get_matchings_from_video(self, video_id) -> dict:
+    with sqlite3.connect(self.db_name) as db:
+      db.row_factory = dict_factory
+      cursor = db.cursor()
+      matched_videos = {}
+      
+      #If the sequence's line includes the search keyword, then it's a matched sequence
+      cursor.execute("""
+        SELECT * FROM sequences WHERE video_id = ?""", (video_id,))
+      seqs = cursor.fetchall()
+      if seqs is not None:
+        for seq in seqs:
+          matched_videos[seq['video_id']] = matched_videos.get(seq['video_id'], {})
+          matched_videos[seq['video_id']][seq['id']] = seq
+      return matched_videos
+
   def get_sequence(self, id):
     with sqlite3.connect(self.db_name) as db:
       db.row_factory = dict_factory

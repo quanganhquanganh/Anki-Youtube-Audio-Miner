@@ -31,6 +31,54 @@ class AddThread(QtCore.QThread):
     self.browser = browser
     # self.abort = False
 
+  def setup_subs2srs(self, mw, deck_name, audio_fld, sentence_fld, url_fld, screenshot_fld):
+      deck = mw.col.decks.id(deck_name)
+      if deck is None:
+        deck = mw.col.decks.new(deck_name)
+        deck['desc'] = "Created by YTminer."
+        mw.col.decks.save(deck)
+        mw.col.decks.update_parents(deck)
+        mw.col.decks.flush()
+      note_type = mw.col.models.byName('ytminer')
+      if note_type is None:
+        note_type = mw.col.models.new('ytminer')
+        note_type['flds'] = []
+        if audio_fld:
+          note_type['flds'].append({'name': audio_fld, 'ord': 0, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'did': deck})
+        if sentence_fld:
+          note_type['flds'].append({'name': sentence_fld, 'ord': 1, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'did': deck})
+        if url_fld:
+          note_type['flds'].append({'name': url_fld, 'ord': 2, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'did': deck})
+        if screenshot_fld:
+          note_type['flds'].append({'name': screenshot_fld, 'ord': 3, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'did': deck})
+        
+        front = ("{{" + screenshot_fld + "}}<br>" if screenshot_fld else "") + ("{{" + sentence_fld + "}}" if sentence_fld else "")
+        front_2nd = ("<br>{{" + url_fld + "}}" if url_fld else "") + ("<br>{{" + audio_fld + "}}" if audio_fld else "")
+        back = "{{FrontSide}}<hr id=answer>" + ("{{" + audio_fld + "}}") if audio_fld else ""
+        note_type['tmpls'].append({
+          "name": "ytminer-template",
+          "qfmt": front if front else front_2nd,
+          "afmt": back,
+          "did": deck,
+        })
+        mw.col.models.add(note_type)
+      else:
+        flds = [fld['name'] for fld in note_type['flds']]
+        if audio_fld and audio_fld not in flds:
+          note_type['flds'].append({'name': audio_fld, 'ord': 0, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 0, 'did': deck})
+        if sentence_fld and sentence_fld not in flds:
+          note_type['flds'].append({'name': sentence_fld, 'ord': 1, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 1, 'did': deck})
+        if url_fld and url_fld not in flds:
+          note_type['flds'].append({'name': url_fld, 'ord': 2, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 2, 'did': deck})
+        if screenshot_fld and screenshot_fld not in flds:
+          note_type['flds'].append({'name': screenshot_fld, 'ord': 3, 'rtl': 0, 'sticky': False, 'fmt': 0, 'font': 'Arial', 'size': 12, 'brk': False, 'lbrk': 0, 'qcol': False, 'ord': 3, 'did': deck})
+
+      note_type['did'] = deck
+      mw.col.models.save(note_type)
+      mw.col.models.setCurrent(note_type)
+      mw.col.models.flush()
+      return deck
+
   def run(self):
     mw = self.browser.mw
     mw.checkpoint("Add audio")
@@ -42,13 +90,22 @@ class AddThread(QtCore.QThread):
       seqs.extend(list(video.values()))
     total = len(seqs)
     for seq in seqs:
-      nid = seq['note']['nid']
+      nid = seq['note']['nid'] if 'nid' in seq['note'] else None
       audio_fld = seq['note']['audio_flds'][seq['pos']] if seq['pos'] in seq['note']['audio_flds'] else None
       sentence_fld = seq['note']['sentence_flds'][seq['pos']] if seq['pos'] in seq['note']['sentence_flds'] else None
       url_fld = seq['note']['url_flds'][seq['pos']] if seq['pos'] in seq['note']['url_flds'] else None
       screenshot_fld = seq['note']['screenshot_flds'][seq['pos']] if seq['pos'] in seq['note']['screenshot_flds'] else None
 
-      note = mw.col.getNote(nid)
+      if nid:
+        note = mw.col.getNote(nid)
+      else:
+        deck_name = seq['deck_name']
+        deck = self.setup_subs2srs(mw, deck_name, audio_fld, sentence_fld, url_fld, screenshot_fld)
+        note = mw.col.newNote(False)
+        note.model()['did'] = deck
+        mw.col.addNote(note)
+        mw.col.save()
+
       if audio_fld and audio_fld in note:
         if 'a_filepath' not in seq:
           continue
@@ -167,7 +224,7 @@ class DownloadThread(QtCore.QThread):
         self.amount.emit("Something went wrong. Retrying...")
         self._try += 1
         to_be_downloaded = to_be_downloaded[(self._current - prev_current):]
-        return self._download_urls(to_be_downloaded, options, check_list = False)
+        return self._download_yt_urls(to_be_downloaded, options, check_list = False)
       else:
         self.amount.emit("Can't download. Skipping...")
         self._try = 0

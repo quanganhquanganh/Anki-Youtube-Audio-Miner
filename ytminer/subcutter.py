@@ -59,8 +59,8 @@ class SubCutter():
     self._proc_thread = None
     self._add_thread = None
     self._search_thread = None
-    self._matchings = None
-    self._downloaded_videos = None
+    self._matchings = {}
+    self._downloaded_videos = []
     self._finish_download = False
     self.running = False
 
@@ -93,9 +93,9 @@ class SubCutter():
     proc_thread.percent.connect(self._proc_bar.setValue)
     return proc_thread
 
-  def _download_info(self, hrefs, info_callback = None):
+  def _download_info(self, hrefs, info_callback = None, finish_dl_thread = None):
     #Get vtt filename then convert it to srt
-    def finish_dl_thread():
+    def default_finish_dl():
       self._finish_download = True
       self._dl_thread.terminate()
       self._dl_thread = None
@@ -103,7 +103,7 @@ class SubCutter():
     hrefs = [{'url': href, 'type': 'info'} for href in hrefs]
     self._dl_thread = self._create_dl_thread(hrefs, 
       info_callback = info_callback,
-      finish_callback = finish_dl_thread)
+      finish_callback = finish_dl_thread or default_finish_dl)
     self._dl_thread.start()
 
   def _store_subtitle(self, info):
@@ -315,12 +315,34 @@ class SubCutter():
   def run_store(self, hrefs):
     self._download_info(hrefs, self._store_subtitle)
 
-  def run_create_deck(self, hrefs):
+  def _create_deck(self, info, fields):
+    video_id = info['id']
+    self._store_subtitle(info)
+    matchings = self._db.get_matchings_from_video(video_id)
+    for seq in [s for v in matchings.values() for s in v.values()]:
+      seq['note'] = {}
+      seq['pos'] = 0
+      seq['deck_name'] = info['title']
+      for f in fields:
+        seq['note'][f] = {}
+        for i, v in enumerate(fields[f]):
+          seq['note'][f][i] = v
+    self._matchings.update(matchings)
+
+  def run_create_decks(self, hrefs, fields):
     if self.running is True:
       return
     self.running = True
-    self._download_info(hrefs)
-    self._process()
+    if 'match_fld' in fields:
+      fields.pop('match_fld')
+    if sum([len(fields[f]) for f in fields]) == 0:
+      self._dl_status.setText("No fields for creating decks.")
+      self.running = False
+      return
+    def finish_getting_info():
+      self._dl_status.setText("Finished getting info.")
+      self._process(self._matchings)
+    self._download_info(hrefs, lambda info: self._create_deck(info, fields), finish_getting_info)
 
   def download_ffmpeg(self):
     if self.running is True:
@@ -330,11 +352,14 @@ class SubCutter():
     plat = sys.platform
     if plat == 'win64' or plat == 'win32':
       plat = 'Windows'
+    else:
+      plat = 'Linux'
+
     url = get_ffmpeg_latest_url(plat)
     url = {'url': url, 'type': 'file'}
     self._dl_thread = DownloadThread(hrefs = [url],
                                   download_path = user_files_dir)
-    #Get vtt filename then convert it to srt
+
     def extract_ffmpeg(zip_file):
       self._dl_status.setText("Extracting ffmpeg...")
       extract_ffmpeg_zip(plat, zip_file['path'], user_files_dir)

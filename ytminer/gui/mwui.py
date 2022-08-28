@@ -284,4 +284,3 @@ class MineWindow(QtWidgets.QWidget):
             item.setFont(QtGui.QFont("", 8))
             item.setToolTip("Double click to open link")
           table.setItem(row, i, item)
-        # raise Exception(table.rowCount())
