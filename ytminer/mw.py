@@ -1,5 +1,6 @@
 from .gui import MineWindow
 
+from PyQt5 import QtCore
 from .subcutter import SubCutter
 from .storage import Storage
 from .paths import storage_path, downloaded_ffmpeg
@@ -51,16 +52,40 @@ class MW(MineWindow):
     # Detect if there's ffmpeg installed in the terminal
     self._check_ffmpeg()
 
+  @QtCore.pyqtSlot(float)
+  def set_dl_bar(self, value):
+    self.download_bar.setValue(value)
+
+  @QtCore.pyqtSlot(str)
+  def set_dl_status(self, status):
+    self.download_status.setText(status)
+
+  @QtCore.pyqtSlot(float)
+  def set_extract_bar(self, value):
+    self.extract_bar.setValue(value)
+
+  @QtCore.pyqtSlot(str)
+  def set_extract_status(self, status):
+    self.extract_status.setText(status)
+
+  @QtCore.pyqtSlot(float)
+  def set_add_bar(self, value):
+    self.add_bar.setValue(value)
+
+  @QtCore.pyqtSlot(str)
+  def set_add_status(self, status):
+    self.add_status.setText(status)
+
   def _get_sub_cutter(self, **kwargs):
     if self.sub_cutter is None:
       self.sub_cutter = SubCutter(browser=self.browser,
                       db = self.db,
-                      dl_bar = self.download_bar, 
-                      ext_bar = self.extract_bar,
-                      add_bar = self.add_bar,
-                      dl_status=self.download_status,
-                      ext_status=self.extract_status,
-                      add_status=self.add_status,
+                      set_dl_bar = self.set_dl_bar,
+                      set_ext_bar = self.set_extract_bar,
+                      set_add_bar = self.set_add_bar,
+                      set_dl_status=self.set_dl_status,
+                      set_ext_status=self.set_extract_status,
+                      set_add_status=self.set_add_status,
                       **kwargs)
     else:
       self.sub_cutter.update_options(**kwargs)
@@ -90,7 +115,7 @@ class MW(MineWindow):
     fields = self._get_fields()
     match_fld = fields['match_fld']
     for nid in nids:
-      note = self.col.getNote(nid)
+      note = self.col.get_note(nid)
       if match_fld in note:
         if not note[match_fld]:
           continue
@@ -135,9 +160,9 @@ class MW(MineWindow):
   def _set_fields(self):
     # Set fields found in all cards for the match box
     fields = []
-    notes = self.col.models.allNames()
+    notes = self.col.models.all_names()
     for n in notes:
-      for x in self.browser.mw.col.models.byName(str(n))['flds']:
+      for x in self.browser.mw.col.models.by_name(str(n))['flds']:
         if x['name'] not in fields:
           fields.append(x['name'])
     self.match_box.addItems(fields)
@@ -222,7 +247,7 @@ class MW(MineWindow):
     self.sub_table.setRowCount(len(subs))
     for idx, sub in enumerate(subs):
       data = [sub['id'], sub['line'], sub['start_time'], sub['end_time'],
-      "https://youtube.com/watch?v={}&t={}".format(sub['video_id'], int(float(sub['start_time'])))]
+      "https://www.youtube.com/watch?v={}&t={}".format(sub['video_id'], int(float(sub['start_time'])))]
       self._add_to_table(self.sub_table, idx, data)
     self.sub_table.resizeColumnsToContents()
 
@@ -288,7 +313,7 @@ class MW(MineWindow):
     if not link.startswith("https://www.youtube.com/"):
       error_message("Invalid youtube link.")
       return
-    self._get_sub_cutter(lang=sub_lang)
+    self._get_sub_cutter(lang = sub_lang)
     self.sub_cutter.run_create_decks([link], self._get_fields())
 
   def _save_options(self):

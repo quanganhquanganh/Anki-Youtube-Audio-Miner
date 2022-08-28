@@ -2,7 +2,7 @@ import os
 from aqt.utils import tooltip
 
 from PyQt5 import QtCore
-import subprocess
+import subprocess, re
 
 from ytminer.messages import error_message
 # from .paths import downloaded_ffmpeg, user_files_dir
@@ -22,7 +22,7 @@ class SearchThread(QtCore.QThread):
     self.matchings.emit(matchings)
 
 class AddThread(QtCore.QThread):
-  percent = QtCore.pyqtSignal(int)
+  percent = QtCore.pyqtSignal(float)
   done = QtCore.pyqtSignal()
 
   def __init__(self, mappings, browser):
@@ -39,7 +39,7 @@ class AddThread(QtCore.QThread):
         mw.col.decks.save(deck)
         mw.col.decks.update_parents(deck)
         mw.col.decks.flush()
-      note_type = mw.col.models.byName('ytminer')
+      note_type = mw.col.models.by_name('ytminer')
       if note_type is None:
         note_type = mw.col.models.new('ytminer')
         note_type['flds'] = []
@@ -75,7 +75,7 @@ class AddThread(QtCore.QThread):
 
       note_type['did'] = deck
       mw.col.models.save(note_type)
-      mw.col.models.setCurrent(note_type)
+      mw.col.models.set_current(note_type)
       mw.col.models.flush()
       return deck
 
@@ -97,7 +97,7 @@ class AddThread(QtCore.QThread):
       screenshot_fld = seq['note']['screenshot_flds'][seq['pos']] if seq['pos'] in seq['note']['screenshot_flds'] else None
 
       if nid:
-        note = mw.col.getNote(nid)
+        note = mw.col.get_note(nid)
       else:
         deck_name = seq['deck_name']
         deck = self.setup_subs2srs(mw, deck_name, audio_fld, sentence_fld, url_fld, screenshot_fld)
@@ -110,7 +110,7 @@ class AddThread(QtCore.QThread):
         if 'a_filepath' not in seq:
           continue
         filepath = seq['a_filepath']
-        audiofname = mw.col.media.addFile(filepath)
+        audiofname = mw.col.media.add_file(filepath)
         note[audio_fld] = "[sound:" + audiofname + "]"
       if sentence_fld and sentence_fld in note:
         note[sentence_fld] = seq['line']
@@ -123,11 +123,11 @@ class AddThread(QtCore.QThread):
         if 'i_filepath' not in seq:
           continue
         filepath = seq['i_filepath']
-        screenshotfname = mw.col.media.addFile(filepath)
+        screenshotfname = mw.col.media.add_file(filepath)
         note[screenshot_fld] = "<img src=\"" + screenshotfname + "\">"
       cnt += 1
       note.flush()
-      self.percent.emit(int(cnt * 100 / total))
+      self.percent.emit(float(cnt * 100 / total))
     self.browser.model.endReset()
     mw.requireReset()
     mw.progress.finish()
@@ -180,6 +180,8 @@ class DownloadThread(QtCore.QThread):
 
     if d['status'] == 'downloading':
       p = d['_percent_str']
+      # Clear any ANSI escape sequences from the string
+      p = re.sub(r'\x1b[^m]*m', '', p)
       p = p.replace('%','')
       #Check if p is convertible to float
       try:
@@ -187,7 +189,7 @@ class DownloadThread(QtCore.QThread):
       except:
         p = 0
       self.percent.emit(p)
-      self.amount.emit('Downloading {}/{}.'.format(self._current + 1, self._total))
+      self.amount.emit('Downloading {}/{}'.format(self._current + 1, self._total))
       
   def _download_yt_urls(self, urls, options, check_list = True):
     prev_current = self._current
@@ -231,7 +233,10 @@ class DownloadThread(QtCore.QThread):
         self._current = self._current + 1
         if self._current != self._total:
           to_be_downloaded = to_be_downloaded[(self._current - prev_current):]
-        return
+          return self._download_yt_urls(to_be_downloaded, options, check_list = False)
+        else:
+          self.amount.emit("Downloading {0}/{0}".format(self._current, self._total))
+          self.done.emit()
 
   def _download_info(self):
     # Check if hrefs is a list of string pairs

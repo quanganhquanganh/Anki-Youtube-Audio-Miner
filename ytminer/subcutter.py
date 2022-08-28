@@ -9,6 +9,7 @@ import glob
 import datetime
 import itertools
 import time
+
 from aqt import mw
 from aqt.qt import *
 from aqt.utils import tooltip, getFile
@@ -32,12 +33,12 @@ class SubCutter():
         audio_format = 'mp3',
         image_format = 'jpg',
         ffmpeg = 'ffmpeg',
-        dl_bar = None,
-        ext_bar = None,
-        add_bar = None,
-        dl_status = None,
-        ext_status = None,
-        add_status = None,):
+        set_dl_bar = None,
+        set_ext_bar = None,
+        set_add_bar = None,
+        set_dl_status = None,
+        set_ext_status = None,
+        set_add_status = None,):
     
     self._db = db
     self._browser = browser
@@ -46,12 +47,12 @@ class SubCutter():
     self.lang = lang
     self.extract_path = os.path.normpath(audio_dir)
     self.download_path = os.path.normpath(dl_dir)
-    self._dl_bar = dl_bar
-    self._proc_bar = ext_bar
-    self._add_bar = add_bar
-    self._dl_status = dl_status
-    self._proc_status = ext_status
-    self._add_status = add_status
+    self._set_dl_bar = set_dl_bar
+    self._set_proc_bar = set_ext_bar
+    self._set_add_bar = set_add_bar
+    self._set_dl_status = set_dl_status
+    self._set_proc_status = set_ext_status
+    self._set_add_status = set_add_status
     self.ffmpeg = ffmpeg
 
     #Threads related
@@ -72,13 +73,13 @@ class SubCutter():
       hrefs,
       info_callback = None,
       finish_callback = None):
-    self._dl_bar.setValue(0)
+    self._set_dl_bar(0)
     dl_thread = DownloadThread(hrefs = hrefs,
       lang = self.lang, 
       download_path = self.download_path)
     dl_thread.done_info.connect(info_callback)
-    dl_thread.percent.connect(self._dl_bar.setValue)
-    dl_thread.amount.connect(self._dl_status.setText)
+    dl_thread.percent.connect(self._set_dl_bar)
+    dl_thread.amount.connect(self._set_dl_status)
     dl_thread.done.connect(finish_callback)
     return dl_thread
 
@@ -90,16 +91,15 @@ class SubCutter():
                     ffmpeg=self.ffmpeg,
                     image_format=self.image_format)
     proc_thread.done_files.connect(finish_callback)
-    proc_thread.percent.connect(self._proc_bar.setValue)
+    proc_thread.percent.connect(self._set_proc_bar)
     return proc_thread
 
   def _download_info(self, hrefs, info_callback = None, finish_dl_thread = None):
     #Get vtt filename then convert it to srt
     def default_finish_dl():
       self._finish_download = True
-      self._dl_thread.terminate()
-      self._dl_thread = None
-      self._dl_status.setText("Finished downloading subtitles!")
+      self._set_dl_status("Finished downloading subtitles!")
+      self.running = False
     hrefs = [{'url': href, 'type': 'info'} for href in hrefs]
     self._dl_thread = self._create_dl_thread(hrefs, 
       info_callback = info_callback,
@@ -139,7 +139,7 @@ class SubCutter():
         self._downloaded_videos = itertools.chain(self._downloaded_videos, [video])
       if self._proc_thread is None:
         self._process_next()
-        
+
   def _process_next(self, files = []):
     # Add filepath to _matchings
     for f in files:
@@ -152,14 +152,13 @@ class SubCutter():
       video = next(self._downloaded_videos)
     except StopIteration:
       if self._finish_download:
-        self._proc_status.setText("Finished")
+        self._set_proc_status("Finished")
         self._add_thread = AddThread(self._matchings, self._browser)
-        self._add_thread.percent.connect(self._add_bar.setValue)
+        self._add_thread.percent.connect(self._set_add_bar)
         self._add_thread.done.connect(self.close)
         self._add_thread.start()
       else:
-        self._proc_status.setText("Waiting for download...")
-      self._proc_thread = None
+        self._set_proc_status("Waiting for download...")
       return
 
     sequences = self._matchings[video['id']]
@@ -167,17 +166,17 @@ class SubCutter():
     sequences = list(sequences.values())
     self._proc_thread = self._create_proc_thread(video['path'], sequences, self._process_next)
     self._proc_thread.start()
-    self._proc_status.setText("Extracting {}...".format(video['title']))
+    self._set_proc_status("Extracting {}...".format(video['title']))
 
   def _process(self, matchings: dict):
-    self._dl_bar.setValue(0)
-    self._proc_bar.setValue(0)
-    self._add_bar.setValue(0)
+    self._set_dl_bar(0)
+    self._set_proc_bar(0)
+    self._set_add_bar(0)
 
     self._finish_download = False
     self._matchings = matchings
     if len(self._matchings) == 0:
-      self._dl_status.setText("No match found")
+      self._set_dl_status("No match found")
       self.running = False
       return
 
@@ -227,13 +226,22 @@ class SubCutter():
           to_be_extracted.append(video)
           audio_hrefs.remove(video_id)
 
+    audio_folder = os.path.join(audio_dir, "*")
+    files = glob.glob(audio_folder.replace("\\", "/"))
+    for f in files:
+      basename = os.path.basename(f)
+      video_id = '_'.join(basename.split(".")[0].split("_")[0:-1])
+      if video_id not in audio_hrefs and video_id not in vid_hrefs and video_id not in [v['id'] for v in to_be_extracted]:
+        os.remove(f)
+        continue
+
     self._downloaded_videos = iter(to_be_extracted)
     hrefs = [{'url': href, 'type': 'image'} for href in vid_hrefs]
     hrefs.extend([{'url': href, 'type': 'audio'} for href in audio_hrefs])
     if len(hrefs) == 0:
       self._finish_download = True
     else:
-      self._dl_status.setText("Downloading {0} files".format(len(hrefs)))
+      self._set_dl_status("Downloading {0} files".format(len(hrefs)))
 
       def finish_dl_all():
         self._finish_download = True
@@ -313,9 +321,12 @@ class SubCutter():
       os.remove(f)
 
   def run_store(self, hrefs):
+    if self.running:
+      return
+    self.running = True
     self._download_info(hrefs, self._store_subtitle)
 
-  def _create_deck(self, info, fields):
+  def _store_info(self, info, fields):
     video_id = info['id']
     self._store_subtitle(info)
     matchings = self._db.get_matchings_from_video(video_id)
@@ -330,22 +341,27 @@ class SubCutter():
     self._matchings.update(matchings)
 
   def run_create_decks(self, hrefs, fields):
-    if self.running is True:
+    if self.running:
       return
     self.running = True
+    self._matchings = {}
+    
     if 'match_fld' in fields:
       fields.pop('match_fld')
     if sum([len(fields[f]) for f in fields]) == 0:
-      self._dl_status.setText("No fields for creating decks.")
+      self._set_dl_status("No fields for creating decks.")
       self.running = False
       return
+
     def finish_getting_info():
-      self._dl_status.setText("Finished getting info.")
+      self._set_dl_status("Finished getting info.")
       self._process(self._matchings)
-    self._download_info(hrefs, lambda info: self._create_deck(info, fields), finish_getting_info)
+    def store_info(info):
+      self._store_info(info, fields)
+    self._download_info(hrefs, store_info, finish_getting_info)
 
   def download_ffmpeg(self):
-    if self.running is True:
+    if self.running:
       return
     self.running = True
     # Get platform
@@ -361,36 +377,36 @@ class SubCutter():
                                   download_path = user_files_dir)
 
     def extract_ffmpeg(zip_file):
-      self._dl_status.setText("Extracting ffmpeg...")
+      self._set_dl_status("Extracting ffmpeg...")
       extract_ffmpeg_zip(plat, zip_file['path'], user_files_dir)
-      self._dl_status.setText("Finished installing ffmpeg!")
+      self._set_dl_status("Finished installing ffmpeg!")
       self.running = False
 
-    self._dl_thread.percent.connect(self._dl_bar.setValue)
-    self._dl_thread.amount.connect(self._dl_status.setText)
+    self._dl_thread.percent.connect(self._set_dl_bar)
+    self._dl_thread.amount.connect(self._set_dl_status)
     self._dl_thread.done_info.connect(extract_ffmpeg)
     self._dl_thread.start()
 
   def run(self, notes):
     # self._clean_downloads()
-    if self.running is True:
+    if self.running:
       return
     self.running = True
     self._search_thread = SearchThread(self._db, notes)
     self._search_thread.matchings.connect(self._process)
     self._search_thread.start()
-    self._dl_status.setText("Searching videos for %d " % len(notes)
+    self._set_dl_status("Searching videos for %d " % len(notes)
       + ("cards..." if len(notes) > 1 else "card..."))
 
   def close(self):
     # Exit all threads
-    if self._search_thread is not None:
+    if self._search_thread:
       self._search_thread.terminate()
       self._search_thread = None
-    if self._dl_thread is not None:
+    if self._dl_thread:
       self._dl_thread.terminate()
       self._dl_thread = None
-    if self._proc_thread is not None:
+    if self._proc_thread:
       self._proc_thread.terminate()
       self._proc_thread = None
     self.running = False

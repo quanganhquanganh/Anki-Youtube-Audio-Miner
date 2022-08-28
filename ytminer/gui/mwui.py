@@ -279,7 +279,6 @@ class MineWindow(QtWidgets.QWidget):
           item = QtWidgets.QTableWidgetItem()
           item.setText(data[i])
           if data[i].startswith("http"):
-            item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
             item.setForeground(QtGui.QBrush(QtGui.QColor(0, 0, 255)))
             item.setFont(QtGui.QFont("", 8))
             item.setToolTip("Double click to open link")

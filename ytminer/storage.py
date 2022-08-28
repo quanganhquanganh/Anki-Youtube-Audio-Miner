@@ -124,6 +124,14 @@ class Storage:
         SELECT status FROM videos WHERE id LIKE ?""", (video_id,))
       return cursor.fetchone()
 
+  def get_video_lang(self, video_id):
+    with sqlite3.connect(self.db_name) as db:
+      db.row_factory = dict_factory
+      cursor = db.cursor()
+      cursor.execute("""
+        SELECT lang FROM videos WHERE id LIKE ?""", (video_id,))
+      return cursor.fetchone()['lang'] if cursor.fetchone() is not None else None
+
   def get_sequence_from_sentence(self, sentence):
     with sqlite3.connect(self.db_name) as db:
       db.row_factory = dict_factory
@@ -335,10 +343,6 @@ class Storage:
     with sqlite3.connect(self.db_name) as db:
       db.row_factory = dict_factory
       cursor = db.cursor()
-      #Delete all files associated with the video
-      cursor.execute("""
-        DELETE FROM files WHERE sequence_id IN (SELECT id FROM sequences WHERE video_id = ?)""", (video_id,))
-      #Delete all the sequences associated with the video
       cursor.execute("""
         DELETE FROM sequences WHERE video_id = ?""", (video_id,))
       #Delete the video
@@ -347,19 +351,16 @@ class Storage:
       db.commit()
       
   def delete_videos_by_ids(self, video_ids):
-      with sqlite3.connect(self.db_name) as db:
-          db.row_factory = dict_factory
-          cursor = db.cursor()
-          #Delete all files associated with the video
-          cursor.execute("""
-              DELETE FROM files WHERE sequence_id IN (SELECT id FROM sequences WHERE video_id IN ({0}))""".format(','.join(['?' for _ in video_ids])), video_ids)
-          #Delete all the sequences associated with the video
-          cursor.execute("""
-              DELETE FROM sequences WHERE video_id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
-          #Delete the video
-          cursor.execute("""
-              DELETE FROM videos WHERE id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
-          db.commit()
+    with sqlite3.connect(self.db_name) as db:
+      db.row_factory = dict_factory
+      cursor = db.cursor()
+      #Delete all the sequences associated with the video
+      cursor.execute("""
+          DELETE FROM sequences WHERE video_id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
+      #Delete the video
+      cursor.execute("""
+          DELETE FROM videos WHERE id IN ({0})""".format(','.join(['?' for _ in video_ids])), video_ids)
+      db.commit()
 
   def delete_subs_by_ids(self, subs_ids):
       with sqlite3.connect(self.db_name) as db:

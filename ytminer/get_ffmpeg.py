@@ -41,4 +41,7 @@ def extract_ffmpeg_zip(plat, zip_src, dest):
   else:
     shutil.copyfile(os.path.join(bin_dir, 'ffmpeg'), os.path.join(dest, 'ffmpeg'))
     shutil.copyfile(os.path.join(bin_dir, 'ffprobe'), os.path.join(dest, 'ffprobe'))
+    # chmod +x ffmpeg and ffprobe
+    os.chmod(os.path.join(dest, 'ffmpeg'), 0o755)
+    os.chmod(os.path.join(dest, 'ffprobe'), 0o755)
   shutil.rmtree(ffmpeg_extract_dir)
