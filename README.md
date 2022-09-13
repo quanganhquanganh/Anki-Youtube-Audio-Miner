@@ -70,7 +70,7 @@ Might take a while to get started, but it's easy.
   
   **[Note: The fields are case sensitive.]**
   
-  **[If you added a comma separated list to the fields, only the first field will be used.]**
+  **[If you add a comma separated list to the fields, only the first field will be used.]**
 
 3. Go back to the **Download** tab.
 4. Insert the **Youtube video** or **playlist URL**.
