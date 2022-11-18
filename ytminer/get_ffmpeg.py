@@ -30,7 +30,26 @@ def extract_ffmpeg_zip(plat, zip_src, dest):
       zip_ref.extractall(ffmpeg_extract_dir)
   elif zip_src.endswith('.tar.xz'):
     with tarfile.open(zip_src) as tar:
-      tar.extractall(ffmpeg_extract_dir)
+      def is_within_directory(directory, target):
+          
+          abs_directory = os.path.abspath(directory)
+          abs_target = os.path.abspath(target)
+      
+          prefix = os.path.commonprefix([abs_directory, abs_target])
+          
+          return prefix == abs_directory
+      
+      def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+      
+          for member in tar.getmembers():
+              member_path = os.path.join(path, member.name)
+              if not is_within_directory(path, member_path):
+                  raise Exception("Attempted Path Traversal in Tar File")
+      
+          tar.extractall(path, members, numeric_owner=numeric_owner) 
+          
+      
+      safe_extract(tar, ffmpeg_extract_dir)
   os.remove(zip_src)
   # If plat is Windows, move ffmpeg.exe to the root of the extracted directory.
   zip_name = os.path.basename(zip_src).split('.')[0]
